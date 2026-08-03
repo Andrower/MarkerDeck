@@ -40,13 +40,15 @@ PORT="$(find_free_port "$BASE_PORT")"
 export PORT
 
 LAN_IP="$("$NODE_BIN" -e 'const os=require("os"); for (const list of Object.values(os.networkInterfaces())) for (const item of list || []) if (item.family==="IPv4" && !item.internal) { console.log(item.address); process.exit(0); } console.log("127.0.0.1");')"
-LAUNCH_URL="http://$LAN_IP:$PORT/chroma-launch.html"
+LAUNCH_URL="http://localhost:$PORT/chroma-launch.html"
+MOBILE_URL="http://$LAN_IP:$PORT/chroma-launch.html"
 DISPLAY_URL="http://$LAN_IP:$PORT/chroma-cross-screen.html?mode=display"
 CONTROL_URL="http://$LAN_IP:$PORT/chroma-cross-screen.html?mode=control"
 
 echo "Chroma Cross Server"
 echo "Files: $SCRIPT_DIR"
-echo "Launch URL: $LAUNCH_URL"
+echo "Local URL: $LAUNCH_URL"
+echo "Mobile URL: $MOBILE_URL"
 echo "Display URL: $DISPLAY_URL"
 echo "Control URL: $CONTROL_URL"
 echo

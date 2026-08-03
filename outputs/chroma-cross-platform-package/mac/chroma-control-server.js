@@ -93,6 +93,7 @@ function cleanDevice(device) {
   return {
     id: device.id,
     name: device.name,
+    group: device.group || "",
     role: device.role,
     width: device.width,
     height: device.height,
@@ -103,13 +104,6 @@ function cleanDevice(device) {
     online: Date.now() - device.lastSeen < 5000,
     state: device.state || state
   };
-}
-
-function cleanupDevices() {
-  const now = Date.now();
-  for (const [id, device] of devices.entries()) {
-    if (now - device.lastSeen > 30000) devices.delete(id);
-  }
 }
 
 function normalizeState(next) {
@@ -361,6 +355,7 @@ async function handler(req, res) {
     devices.set(id, {
       id,
       name: registeredName,
+      group: previous?.group || "",
       role: String(body.role || previous?.role || "display").slice(0, 20),
       width: Number(body.width || 0),
       height: Number(body.height || 0),
@@ -374,7 +369,6 @@ async function handler(req, res) {
   }
 
   if (url.pathname === "/api/devices") {
-    cleanupDevices();
     const list = Array.from(devices.values())
       .map(cleanDevice)
       .sort((a, b) => {
@@ -421,9 +415,26 @@ async function handler(req, res) {
     const device = devices.get(id);
     if (!device) return send(res, 404, "Device not found");
     device.name = name;
-    device.lastSeen = Date.now();
     devices.set(id, device);
     return send(res, 200, JSON.stringify({ ok: true, name }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/device-group" && req.method === "POST") {
+    const body = JSON.parse(await readBody(req));
+    const ids = Array.isArray(body.ids)
+      ? body.ids.map((id) => String(id || "").slice(0, 80)).filter(Boolean).slice(0, 100)
+      : [];
+    const group = String(body.group || "").trim().slice(0, 40);
+    if (!ids.length) return send(res, 400, "Missing device ids");
+    let updated = 0;
+    ids.forEach((id) => {
+      const device = devices.get(id);
+      if (!device) return;
+      device.group = group;
+      devices.set(id, device);
+      updated += 1;
+    });
+    return send(res, 200, JSON.stringify({ ok: true, group, updated }), "application/json; charset=utf-8");
   }
 
   if (url.pathname === "/api/state") {

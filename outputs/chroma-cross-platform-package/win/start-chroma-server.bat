@@ -18,9 +18,9 @@ if not exist chroma-control-server.js (
   exit /b 1
 )
 
-set LAUNCH_URL=http://127.0.0.1:%PORT%/chroma-launch.html
-set CONTROL_URL=http://127.0.0.1:%PORT%/chroma-cross-screen.html?mode=control
-set DISPLAY_URL=http://127.0.0.1:%PORT%/chroma-cross-screen.html?mode=display
+set LAUNCH_URL=http://localhost:%PORT%/chroma-launch.html
+set CONTROL_URL=http://localhost:%PORT%/chroma-cross-screen.html?mode=control
+set DISPLAY_URL=http://localhost:%PORT%/chroma-cross-screen.html?mode=display
 
 echo Chroma Cross Server
 echo Launch URL: %LAUNCH_URL%

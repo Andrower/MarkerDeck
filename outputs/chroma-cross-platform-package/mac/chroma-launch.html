@@ -289,14 +289,15 @@
 
     function applyUrls(baseUrl) {
       const root = baseUrl.replace(/\/chroma-launch\.html$/, "");
+      const localRoot = location.protocol.startsWith("http") ? location.origin : root;
       const controlUrl = `${root}/chroma-cross-screen.html?mode=control`;
       const displayUrl = `${root}/chroma-cross-screen.html?mode=display`;
 
       document.getElementById("launchUrl").textContent = baseUrl;
       document.getElementById("controlUrl").textContent = controlUrl;
       document.getElementById("displayUrl").textContent = displayUrl;
-      document.getElementById("enterControl").href = controlUrl;
-      document.getElementById("enterDisplay").href = displayUrl;
+      document.getElementById("enterControl").href = `${localRoot}/chroma-cross-screen.html?mode=control`;
+      document.getElementById("enterDisplay").href = `${localRoot}/chroma-cross-screen.html?mode=display`;
       qrImage.src = `/qr.svg?text=${encodeURIComponent(baseUrl)}`;
     }
 

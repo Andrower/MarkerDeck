@@ -91,9 +91,46 @@
       top: max(12px, env(safe-area-inset-top));
       bottom: max(12px, env(safe-area-inset-bottom));
       max-height: none;
-      background: #17221a;
+      background: #121c15;
       box-shadow: none;
       backdrop-filter: none;
+      transition: none;
+    }
+
+    .control-workspace,
+    .workspace-column {
+      display: contents;
+    }
+
+    body.control-mode .control-workspace {
+      display: grid;
+      gap: 14px;
+      align-items: start;
+    }
+
+    body.control-mode .workspace-column {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      align-content: start;
+    }
+
+    body.control-mode .preset-section,
+    body.control-mode .settings-section {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    body.control-mode .preset-toolbar,
+    body.control-mode .preset-grid,
+    body.control-mode .actions,
+    body.control-mode .export-tools {
+      margin: 0;
     }
 
     body.locked .panel {
@@ -300,8 +337,55 @@
       margin-top: 12px;
     }
 
-    body.control-mode #exportPngBtn {
-      display: none;
+    .export-tools {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .export-resolution {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+    }
+
+    .export-resolution input {
+      min-width: 0;
+      min-height: 40px;
+      padding: 0 10px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 7px;
+      outline: none;
+      background: rgba(0, 0, 0, 0.24);
+      color: #fff;
+      font: inherit;
+      text-align: center;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .export-resolution input:focus {
+      border-color: rgba(255, 255, 255, 0.52);
+    }
+
+    .export-resolution span {
+      color: rgba(255, 255, 255, 0.62);
+    }
+
+    .export-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .export-note {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.56);
+      font-size: 11px;
+      line-height: 1.4;
     }
 
     .hot-corner {
@@ -437,7 +521,7 @@
     body.control-mode .device-manager {
       display: grid;
       gap: 10px;
-      margin-bottom: 10px;
+      margin-bottom: 0;
     }
 
     .control-quickconnect {
@@ -452,6 +536,7 @@
     body.control-mode .control-quickconnect {
       display: grid;
       gap: 10px;
+      margin-bottom: 0;
     }
 
     .control-quickconnect-title {
@@ -473,17 +558,17 @@
 
     .control-quickconnect-body {
       display: grid;
-      grid-template-columns: 104px 1fr;
-      gap: 10px;
+      grid-template-columns: 176px minmax(0, 1fr);
+      gap: 12px;
       align-items: center;
     }
 
     .control-quickconnect img {
-      width: 104px;
-      height: 104px;
+      width: 176px;
+      height: 176px;
       border-radius: 6px;
       background: #fff;
-      padding: 6px;
+      padding: 8px;
     }
 
     .control-quickconnect .quickconnect-meta {
@@ -554,32 +639,129 @@
       opacity: 0.45;
     }
 
+    .device-batch-tools,
+    .device-group-tools {
+      display: grid;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .device-batch-tools {
+      grid-template-columns: auto auto minmax(0, 1fr);
+    }
+
+    .device-group-tools {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .device-group-tools input,
+    .device-group-tools select {
+      min-width: 0;
+      width: 100%;
+      min-height: 38px;
+      padding: 0 10px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 7px;
+      background: rgba(0, 0, 0, 0.26);
+      color: #fff;
+    }
+
+    .selection-summary {
+      color: rgba(255, 255, 255, 0.66);
+      font-size: 12px;
+      text-align: right;
+    }
+
     .device-list {
       display: grid;
-      gap: 6px;
-      max-height: 130px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      max-height: 390px;
       overflow: auto;
     }
 
     .device-item {
+      position: relative;
       display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      align-items: center;
-      min-height: 42px;
-      padding: 7px 8px;
-      text-align: left;
-      background: rgba(255, 255, 255, 0.1);
+      grid-template-rows: 112px auto auto;
+      gap: 6px;
+      min-width: 0;
+      min-height: 0;
+      padding: 8px;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.08);
     }
 
     .device-item.active {
-      outline: 2px solid rgba(255, 255, 255, 0.85);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+      background: rgba(255, 255, 255, 0.13);
     }
 
-    .device-item small {
+    .device-item.batch-selected {
+      outline: 2px solid #65e879;
+    }
+
+    .device-select-mark {
+      position: absolute;
+      top: 13px;
+      right: 13px;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.58);
+      color: transparent;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .device-item.batch-selected .device-select-mark {
+      border-color: #65e879;
+      background: #65e879;
+      color: #102016;
+    }
+
+    .device-item.offline {
+      opacity: 0.62;
+    }
+
+    .device-thumbnail-frame {
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      height: 112px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 5px;
+      background: rgba(0, 0, 0, 0.3);
+    }
+
+    .device-thumbnail {
       display: block;
-      margin-top: 2px;
-      color: rgba(255, 255, 255, 0.6);
+      height: 100%;
+      max-width: 100%;
+      aspect-ratio: var(--device-aspect, 9 / 16);
+      background: #111;
+    }
+
+    .device-card-name {
+      min-width: 0;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .device-card-status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      color: rgba(255, 255, 255, 0.56);
       font-size: 11px;
       line-height: 1.25;
     }
@@ -595,16 +777,6 @@
       background: #777;
     }
 
-    .preview-canvas {
-      width: min(170px, 100%);
-      aspect-ratio: 9 / 16;
-      border-radius: 6px;
-      background: #111;
-      display: block;
-      justify-self: center;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-    }
-
     body.locked .status-pill {
       opacity: 0;
     }
@@ -612,6 +784,41 @@
     @media (max-width: 520px) {
       .preset-grid {
         grid-template-columns: 1fr;
+      }
+
+      .export-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .control-quickconnect-body {
+        grid-template-columns: 1fr;
+      }
+
+      .control-quickconnect img {
+        width: min(220px, 100%);
+        height: auto;
+        aspect-ratio: 1;
+        justify-self: center;
+      }
+
+      .device-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .device-batch-tools,
+      .device-group-tools {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .selection-summary {
+        grid-column: 1 / -1;
+        text-align: left;
+      }
+    }
+
+    @media (max-width: 759px) {
+      body.control-mode .control-workspace {
+        grid-template-columns: minmax(0, 1fr);
       }
     }
 
@@ -681,6 +888,34 @@
       font-weight: 800;
     }
 
+    .export-choice-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .name-dialog-card .secondary-button {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+    }
+
+    .name-dialog-card .cancel-button {
+      grid-column: 1 / -1;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    @media (max-width: 420px) {
+      .export-choice-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .name-dialog-card .cancel-button {
+        grid-column: auto;
+      }
+    }
+
     @media (min-width: 760px) {
       .panel {
         left: auto;
@@ -688,9 +923,49 @@
       }
 
       body.control-mode .panel {
-        left: max(12px, env(safe-area-inset-left));
+        left: 50%;
         right: auto;
-        width: 430px;
+        width: min(1180px, calc(100vw - 32px));
+        transform: translateX(-50%);
+        padding: 16px;
+      }
+
+      body.control-mode.locked .panel {
+        transform: translateX(-50%);
+      }
+
+      body.control-mode .control-workspace {
+        grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1.18fr);
+        grid-template-areas:
+          "connect settings"
+          "device settings";
+      }
+
+      body.control-mode .connect-column {
+        grid-area: connect;
+      }
+
+      body.control-mode .device-column {
+        grid-area: device;
+      }
+
+      body.control-mode .settings-column {
+        grid-area: settings;
+      }
+
+      body.control-mode .preset-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (min-width: 1200px) {
+      body.control-mode .panel {
+        width: min(1480px, calc(100vw - 40px));
+      }
+
+      body.control-mode .control-workspace {
+        grid-template-columns: minmax(300px, 0.8fr) minmax(350px, 0.95fr) minmax(420px, 1.25fr);
+        grid-template-areas: "connect device settings";
       }
     }
   </style>
@@ -707,6 +982,18 @@
       <input id="displayNameInput" type="text" maxlength="40" autocomplete="off" enterkeyhint="done" aria-label="被控端名称">
       <button type="submit">确认并进入被控端</button>
     </form>
+  </div>
+
+  <div class="name-dialog hidden" id="exportChoiceDialog" role="dialog" aria-modal="true" aria-labelledby="exportChoiceTitle">
+    <div class="name-dialog-card">
+      <h2 id="exportChoiceTitle">选择导出方式</h2>
+      <p>将全部预设下载为一个 ZIP 压缩包，或分别保存为多个 PNG 文件。</p>
+      <div class="export-choice-actions">
+        <button id="exportZipBtn" type="button">ZIP 压缩包</button>
+        <button id="exportFilesBtn" class="secondary-button" type="button">多个 PNG 文件</button>
+        <button id="cancelExportChoiceBtn" class="cancel-button" type="button">取消</button>
+      </div>
+    </div>
   </div>
 
   <section class="launcher" id="launcher">
@@ -739,7 +1026,9 @@
       <button class="primary" id="lockBtn">锁定投放</button>
     </div>
 
-    <div class="control-quickconnect" id="controlQuickconnect">
+    <div class="control-workspace">
+      <div class="workspace-column connect-column">
+      <div class="control-quickconnect" id="controlQuickconnect">
       <div class="control-quickconnect-title">
         <span>快速连接</span>
         <div class="quickconnect-actions">
@@ -754,15 +1043,31 @@
           <button id="openControlUrlBtn">打开当前控制地址</button>
         </div>
       </div>
-    </div>
+      </div>
+      </div>
 
-    <div class="device-manager" id="deviceManager">
+      <div class="workspace-column device-column">
+      <div class="device-manager" id="deviceManager">
       <div class="device-title">
         <span>设备管理</span>
         <div class="device-actions">
           <button id="forceLockBtn">远程锁定</button>
           <button id="refreshDevicesBtn">刷新</button>
         </div>
+      </div>
+      <div class="device-batch-tools">
+        <button id="selectOnlineBtn">全选在线</button>
+        <button id="clearSelectionBtn">取消选择</button>
+        <span class="selection-summary" id="selectionSummary">已选择 0 台</span>
+      </div>
+      <div class="device-group-tools">
+        <select id="groupSelect" aria-label="设备分组">
+          <option value="">选择分组</option>
+        </select>
+        <button id="selectGroupBtn">选择该组</button>
+        <input id="groupNameInput" type="text" maxlength="40" placeholder="输入新分组名称" autocomplete="off">
+        <button id="assignGroupBtn">设置分组</button>
+        <button id="clearGroupBtn">移出分组</button>
       </div>
     <div class="device-rename">
       <span>设备名称</span>
@@ -771,16 +1076,20 @@
       <div class="current-device" id="currentDeviceLabel">当前未选择设备</div>
     </div>
       <div class="device-list" id="deviceList"></div>
-      <canvas class="preview-canvas" id="previewCanvas" aria-label="选中设备投放预览"></canvas>
-    </div>
+      </div>
+      </div>
 
-    <div class="preset-toolbar">
-      <input id="presetNameInput" type="text" maxlength="40" placeholder="输入新预设名称" autocomplete="off">
-      <button id="savePresetBtn">保存当前设置</button>
-    </div>
-    <div class="preset-grid" id="presets"></div>
+      <div class="workspace-column settings-column">
+        <section class="preset-section">
+          <div class="preset-toolbar">
+            <input id="presetNameInput" type="text" maxlength="40" placeholder="输入新预设名称" autocomplete="off">
+            <button id="savePresetBtn">保存当前设置</button>
+          </div>
+          <div class="preset-grid" id="presets"></div>
+        </section>
 
-    <div class="controls">
+        <section class="settings-section">
+        <div class="controls">
       <label class="row">
         <span>背景颜色</span>
         <input id="bgColor" type="color" value="#00ff00">
@@ -826,14 +1135,29 @@
         <input id="randomPointCount" type="range" min="4" max="80" step="1" value="12">
         <span id="randomPointCountValue"></span>
       </label>
-    </div>
+        </div>
 
-    <div class="actions">
+        <div class="actions">
       <button id="defaultBtn">恢复默认点位</button>
       <button id="blackoutBtn">纯黑待机</button>
       <button id="crossToggleBtn">隐藏十字</button>
       <button id="randomPointsBtn">开启随机点</button>
-      <button id="exportPngBtn">导出 PNG</button>
+        </div>
+
+        <div class="export-tools">
+      <div class="export-resolution" aria-label="PNG 导出分辨率">
+        <input id="exportWidth" type="number" min="64" max="16384" step="1" inputmode="numeric" aria-label="导出宽度">
+        <span>×</span>
+        <input id="exportHeight" type="number" min="64" max="16384" step="1" inputmode="numeric" aria-label="导出高度">
+      </div>
+      <div class="export-actions">
+        <button id="exportPngBtn">导出当前 PNG</button>
+        <button id="exportAllPresetsBtn">导出全部预设</button>
+      </div>
+      <p class="export-note">尺寸单位为最终图片像素。批量导出会保存预设列表中的全部画面。</p>
+        </div>
+        </section>
+      </div>
     </div>
   </section>
 
@@ -853,16 +1177,29 @@
     const controlQrImage = document.getElementById("controlQrImage");
     const controlUrlText = document.getElementById("controlUrlText");
     const deviceList = document.getElementById("deviceList");
-    const previewCanvas = document.getElementById("previewCanvas");
-    const previewCtx = previewCanvas.getContext("2d", { alpha: false });
     const forceLockBtn = document.getElementById("forceLockBtn");
     const stopServerBtn = document.getElementById("stopServerBtn");
     const deviceNameInput = document.getElementById("deviceNameInput");
     const saveDeviceNameBtn = document.getElementById("saveDeviceNameBtn");
     const currentDeviceLabel = document.getElementById("currentDeviceLabel");
+    const selectOnlineBtn = document.getElementById("selectOnlineBtn");
+    const clearSelectionBtn = document.getElementById("clearSelectionBtn");
+    const selectionSummary = document.getElementById("selectionSummary");
+    const groupSelect = document.getElementById("groupSelect");
+    const selectGroupBtn = document.getElementById("selectGroupBtn");
+    const groupNameInput = document.getElementById("groupNameInput");
+    const assignGroupBtn = document.getElementById("assignGroupBtn");
+    const clearGroupBtn = document.getElementById("clearGroupBtn");
     const crossToggleBtn = document.getElementById("crossToggleBtn");
     const randomPointsBtn = document.getElementById("randomPointsBtn");
     const exportPngBtn = document.getElementById("exportPngBtn");
+    const exportAllPresetsBtn = document.getElementById("exportAllPresetsBtn");
+    const exportChoiceDialog = document.getElementById("exportChoiceDialog");
+    const exportZipBtn = document.getElementById("exportZipBtn");
+    const exportFilesBtn = document.getElementById("exportFilesBtn");
+    const cancelExportChoiceBtn = document.getElementById("cancelExportChoiceBtn");
+    const exportWidthInput = document.getElementById("exportWidth");
+    const exportHeightInput = document.getElementById("exportHeight");
     const displayNameDialog = document.getElementById("displayNameDialog");
     const displayNameForm = document.getElementById("displayNameForm");
     const displayNameInput = document.getElementById("displayNameInput");
@@ -907,8 +1244,12 @@
     let heartbeatTimer = 0;
     let applyingRemote = false;
     let selectedDeviceId = "";
+    let selectedDeviceIds = new Set();
+    let selectionInitialized = false;
+    let lastDevices = [];
     let selectedDeviceInfo = null;
     let selectedDeviceState = null;
+    let devicePreviewCanvases = new Map();
     let selectedDeviceNameId = "";
     let selectedDeviceNameDraft = "";
     let selectedDeviceNameLocked = false;
@@ -1153,41 +1494,168 @@
       statusPill.textContent = text;
     }
 
-    function exportFileName() {
+    function exportTimestamp() {
       const now = new Date();
       const pad = (value) => String(value).padStart(2, "0");
-      return `chroma-screen-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.png`;
+      return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     }
 
-    function fullscreenExportSize() {
+    function fullscreenExportPixelSize() {
       let width = Math.max(1, Math.round(Number(window.screen?.width) || window.innerWidth));
       let height = Math.max(1, Math.round(Number(window.screen?.height) || window.innerHeight));
       const viewportIsLandscape = window.innerWidth > window.innerHeight;
       const screenIsLandscape = width > height;
       if (viewportIsLandscape !== screenIsLandscape) [width, height] = [height, width];
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
       return {
-        width: Math.max(width, Math.round(window.innerWidth)),
-        height: Math.max(height, Math.round(window.innerHeight))
+        width: Math.round(Math.max(width, window.innerWidth) * dpr),
+        height: Math.round(Math.max(height, window.innerHeight) * dpr)
       };
+    }
+
+    function initializeExportResolution() {
+      const size = fullscreenExportPixelSize();
+      exportWidthInput.value = size.width;
+      exportHeightInput.value = size.height;
+    }
+
+    function readExportSize() {
+      const width = Math.round(Number(exportWidthInput.value));
+      const height = Math.round(Number(exportHeightInput.value));
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width < 64 || height < 64 || width > 16384 || height > 16384) {
+        throw new Error("resolution");
+      }
+      if (width * height > 67108864) throw new Error("resolution-too-large");
+      return { width, height };
+    }
+
+    function safeFilePart(value, fallback) {
+      const cleaned = String(value || "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").replace(/\s+/g, " ").trim();
+      return (cleaned || fallback).slice(0, 60);
+    }
+
+    function makePngBlob(renderState, size) {
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = size.width;
+      exportCanvas.height = size.height;
+      const exportContext = exportCanvas.getContext("2d", { alpha: false });
+      drawStateToContext(exportContext, size.width, size.height, renderState);
+      return new Promise((resolve, reject) => {
+        exportCanvas.toBlob((result) => result ? resolve(result) : reject(new Error("png")), "image/png");
+      });
+    }
+
+    function downloadBlob(blob, fileName) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    const crcTable = (() => {
+      const table = new Uint32Array(256);
+      for (let index = 0; index < 256; index += 1) {
+        let value = index;
+        for (let bit = 0; bit < 8; bit += 1) {
+          value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+        }
+        table[index] = value >>> 0;
+      }
+      return table;
+    })();
+
+    function crc32(bytes) {
+      let crc = 0xffffffff;
+      for (const byte of bytes) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+      return (crc ^ 0xffffffff) >>> 0;
+    }
+
+    function zipDateTime(date = new Date()) {
+      const year = Math.max(1980, date.getFullYear());
+      return {
+        time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+        date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate()
+      };
+    }
+
+    async function makeZipBlob(files) {
+      const encoder = new TextEncoder();
+      const localParts = [];
+      const centralParts = [];
+      let offset = 0;
+      const stamp = zipDateTime();
+
+      for (const file of files) {
+        const name = encoder.encode(file.name);
+        const bytes = new Uint8Array(await file.blob.arrayBuffer());
+        const checksum = crc32(bytes);
+        const local = new ArrayBuffer(30 + name.length);
+        const localView = new DataView(local);
+        localView.setUint32(0, 0x04034b50, true);
+        localView.setUint16(4, 20, true);
+        localView.setUint16(6, 0x0800, true);
+        localView.setUint16(8, 0, true);
+        localView.setUint16(10, stamp.time, true);
+        localView.setUint16(12, stamp.date, true);
+        localView.setUint32(14, checksum, true);
+        localView.setUint32(18, bytes.length, true);
+        localView.setUint32(22, bytes.length, true);
+        localView.setUint16(26, name.length, true);
+        new Uint8Array(local, 30).set(name);
+        localParts.push(local, bytes);
+
+        const central = new ArrayBuffer(46 + name.length);
+        const centralView = new DataView(central);
+        centralView.setUint32(0, 0x02014b50, true);
+        centralView.setUint16(4, 20, true);
+        centralView.setUint16(6, 20, true);
+        centralView.setUint16(8, 0x0800, true);
+        centralView.setUint16(10, 0, true);
+        centralView.setUint16(12, stamp.time, true);
+        centralView.setUint16(14, stamp.date, true);
+        centralView.setUint32(16, checksum, true);
+        centralView.setUint32(20, bytes.length, true);
+        centralView.setUint32(24, bytes.length, true);
+        centralView.setUint16(28, name.length, true);
+        centralView.setUint32(42, offset, true);
+        new Uint8Array(central, 46).set(name);
+        centralParts.push(central);
+        offset += local.byteLength + bytes.byteLength;
+      }
+
+      const centralSize = centralParts.reduce((total, part) => total + part.byteLength, 0);
+      const end = new ArrayBuffer(22);
+      const endView = new DataView(end);
+      endView.setUint32(0, 0x06054b50, true);
+      endView.setUint16(8, files.length, true);
+      endView.setUint16(10, files.length, true);
+      endView.setUint32(12, centralSize, true);
+      endView.setUint32(16, offset, true);
+      return new Blob([...localParts, ...centralParts, end], { type: "application/zip" });
+    }
+
+    function choosePresetExportMode() {
+      exportChoiceDialog.classList.remove("hidden");
+      exportZipBtn.focus();
+    }
+
+    function closePresetExportChoice() {
+      exportChoiceDialog.classList.add("hidden");
+      exportAllPresetsBtn.focus();
     }
 
     async function exportPng() {
       exportPngBtn.disabled = true;
       exportPngBtn.textContent = "正在导出";
       try {
-        const cssSize = fullscreenExportSize();
-        const dpr = Math.max(1, window.devicePixelRatio || 1);
-        const exportCanvas = document.createElement("canvas");
-        exportCanvas.width = Math.round(cssSize.width * dpr);
-        exportCanvas.height = Math.round(cssSize.height * dpr);
-        const exportContext = exportCanvas.getContext("2d", { alpha: false });
-        exportContext.setTransform(dpr, 0, 0, dpr, 0, 0);
-        drawStateToContext(exportContext, cssSize.width, cssSize.height, state());
-        const blob = await new Promise((resolve, reject) => {
-          exportCanvas.toBlob((result) => result ? resolve(result) : reject(new Error("png")), "image/png");
-        });
-        const fileName = exportFileName();
-        const exportedPixels = `${exportCanvas.width} x ${exportCanvas.height}`;
+        const size = readExportSize();
+        const blob = await makePngBlob(state(), size);
+        const fileName = `chroma-screen-${size.width}x${size.height}-${exportTimestamp()}.png`;
+        const exportedPixels = `${size.width} x ${size.height}`;
 
         if (typeof window.showSaveFilePicker === "function") {
           const handle = await window.showSaveFilePicker({
@@ -1208,20 +1676,72 @@
           return;
         }
 
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = fileName;
-        document.body.append(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        downloadBlob(blob, fileName);
         updateStatus(`PNG 已下载 ${exportedPixels}`);
       } catch (error) {
-        updateStatus(error?.name === "AbortError" ? "已取消导出" : "PNG 导出失败");
+        const message = error?.message === "resolution"
+          ? "请输入 64 至 16384 的有效分辨率"
+          : error?.message === "resolution-too-large"
+            ? "分辨率过大，总像素不能超过 6710 万"
+            : error?.name === "AbortError" ? "已取消导出" : "PNG 导出失败";
+        updateStatus(message);
       } finally {
         exportPngBtn.disabled = false;
-        exportPngBtn.textContent = "导出 PNG";
+        exportPngBtn.textContent = "导出当前 PNG";
+      }
+    }
+
+    async function exportAllPresets(mode) {
+      if (!presets.length) {
+        updateStatus("暂无可导出的预设");
+        return;
+      }
+      exportAllPresetsBtn.disabled = true;
+      exportPngBtn.disabled = true;
+      const originalLabel = exportAllPresetsBtn.textContent;
+      try {
+        const size = readExportSize();
+        const directory = mode === "files" && typeof window.showDirectoryPicker === "function"
+          ? await window.showDirectoryPicker({ mode: "readwrite" })
+          : null;
+        const zipFiles = [];
+        for (let index = 0; index < presets.length; index += 1) {
+          const preset = presets[index];
+          exportAllPresetsBtn.textContent = `正在导出 ${index + 1}/${presets.length}`;
+          const blob = await makePngBlob(preset.state || {}, size);
+          const order = String(index + 1).padStart(2, "0");
+          const name = safeFilePart(preset.name, `preset-${order}`);
+          const fileName = `${order}-${name}-${size.width}x${size.height}.png`;
+          if (mode === "zip") {
+            zipFiles.push({ name: fileName, blob });
+          } else if (directory) {
+            const handle = await directory.getFileHandle(fileName, { create: true });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+          } else {
+            downloadBlob(blob, fileName);
+            await new Promise((resolve) => setTimeout(resolve, 120));
+          }
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+        if (mode === "zip") {
+          exportAllPresetsBtn.textContent = "正在生成 ZIP";
+          const zip = await makeZipBlob(zipFiles);
+          downloadBlob(zip, `chroma-presets-${size.width}x${size.height}.zip`);
+        }
+        updateStatus(`已导出 ${presets.length} 个预设，${size.width} x ${size.height}`);
+      } catch (error) {
+        const message = error?.message === "resolution"
+          ? "请输入 64 至 16384 的有效分辨率"
+          : error?.message === "resolution-too-large"
+            ? "分辨率过大，总像素不能超过 6710 万"
+            : error?.name === "AbortError" ? "已取消批量导出" : "批量导出失败";
+        updateStatus(message);
+      } finally {
+        exportAllPresetsBtn.disabled = false;
+        exportPngBtn.disabled = false;
+        exportAllPresetsBtn.textContent = originalLabel;
       }
     }
 
@@ -1364,6 +1884,7 @@
     async function lockProjection(options = {}) {
       lockedByRemote = !!options.remote;
       locked = true;
+      document.activeElement?.blur?.();
       window.chromaDesktop?.setProjectionLocked?.(true);
       document.body.classList.add("locked");
       lockBtn.textContent = "已锁定";
@@ -1374,6 +1895,7 @@
           await root.requestFullscreen({ navigationUI: "hide" });
         } catch (_) {}
       }
+      document.activeElement?.blur?.();
       await requestWakeLock();
       render();
       if (role === "display") await publishState();
@@ -1408,12 +1930,12 @@
 
     async function toggleLockFromHotkey() {
       if (role === "control") {
-        if (!selectedDeviceId) {
+        if (!selectedDeviceIds.size) {
           updateStatus("请先选择投放端");
           return;
         }
-        const deviceLocked = String(selectedDeviceState?.displayLocked || selectedDeviceState?.forceLock || "0") === "1";
-        await setRemoteLock(!deviceLocked);
+        const allLocked = selectedTargets().every((device) => String(device.state?.displayLocked || device.state?.forceLock || "0") === "1");
+        await setRemoteLock(!allLocked);
         return;
       }
       if (locked) await unlockProjection();
@@ -1440,24 +1962,38 @@
 
     async function publishState() {
       if (!serverMode || applyingRemote) return;
-      const targetDeviceId = role === "control" ? selectedDeviceId : role === "display" ? deviceId : "";
-      if (!targetDeviceId) return;
-      const nextState = role === "control"
-        ? currentStateWithFlags()
-        : {
-            ...state(),
-            forceLock: deviceForceLock,
-            displayLocked: locked ? "1" : "0",
-            lockCommand: "none",
-            lockCommandId: lastLockCommandId
-          };
       try {
-        await fetch(`/api/state?deviceId=${encodeURIComponent(targetDeviceId)}`, {
+        if (role === "control") {
+          const targets = selectedTargets();
+          if (!targets.length) return;
+          const visualState = state();
+          await Promise.all(targets.map(async (device) => {
+            const nextState = { ...(device.state || {}), ...visualState };
+            const response = await fetch(`/api/state?deviceId=${encodeURIComponent(device.id)}`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(nextState)
+            });
+            if (!response.ok) throw new Error("sync");
+            device.state = nextState;
+            if (device.id === selectedDeviceId) selectedDeviceState = nextState;
+          }));
+          updateStatus(`已同步 ${targets.length} 台设备`);
+          return;
+        }
+        if (role !== "display") return;
+        const nextState = {
+          ...state(),
+          forceLock: deviceForceLock,
+          displayLocked: locked ? "1" : "0",
+          lockCommand: "none",
+          lockCommandId: lastLockCommandId
+        };
+        await fetch(`/api/state?deviceId=${encodeURIComponent(deviceId)}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(nextState)
         });
-        if (role === "control") updateStatus(`控制端 已同步 ${targetDeviceId.slice(-4)}`);
       } catch (_) {
         updateStatus(role === "control" ? "控制端 离线" : "投放端 离线");
       }
@@ -1560,12 +2096,101 @@
       }
     }
 
+    function selectedTargets() {
+      return lastDevices.filter((device) => selectedDeviceIds.has(device.id));
+    }
+
+    function updateGroupOptions(devices) {
+      const currentValue = groupSelect.value;
+      const groups = [...new Set(devices.map((device) => String(device.group || "").trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, "zh-CN"));
+      groupSelect.innerHTML = '<option value="">选择分组</option>';
+      groups.forEach((group) => {
+        const option = document.createElement("option");
+        option.value = group;
+        option.textContent = group;
+        groupSelect.append(option);
+      });
+      if (groups.includes(currentValue)) groupSelect.value = currentValue;
+      selectGroupBtn.disabled = !groupSelect.value;
+    }
+
+    function updateSelectionUi() {
+      const count = selectedDeviceIds.size;
+      const onlineCount = selectedTargets().filter((device) => device.online).length;
+      selectionSummary.textContent = count ? `已选择 ${count} 台 · 在线 ${onlineCount} 台` : "已选择 0 台";
+      clearSelectionBtn.disabled = count === 0;
+      assignGroupBtn.disabled = count === 0;
+      clearGroupBtn.disabled = count === 0;
+      updateRemoteLockButton();
+    }
+
+    function clearSelectedDevice() {
+      selectedDeviceId = "";
+      selectedDeviceInfo = null;
+      selectedDeviceState = null;
+      selectedDeviceNameId = "";
+      selectedDeviceNameDraft = "";
+      deviceNameInput.value = "";
+      deviceNameInput.disabled = true;
+      saveDeviceNameBtn.disabled = true;
+      currentDeviceLabel.textContent = selectedDeviceIds.size ? `已选择 ${selectedDeviceIds.size} 台设备` : "当前未选择设备";
+    }
+
+    async function toggleDeviceSelection(device) {
+      if (selectedDeviceIds.has(device.id)) {
+        selectedDeviceIds.delete(device.id);
+        if (selectedDeviceId === device.id) {
+          const nextId = selectedDeviceIds.values().next().value || "";
+          const nextDevice = lastDevices.find((item) => item.id === nextId);
+          if (nextDevice) {
+            await selectDevice(nextDevice.id, nextDevice.state);
+            return;
+          }
+          clearSelectedDevice();
+        }
+        renderDevices(lastDevices);
+        return;
+      }
+      selectedDeviceIds.add(device.id);
+      await selectDevice(device.id, device.state);
+    }
+
+    async function selectDeviceSet(devices) {
+      selectedDeviceIds = new Set(devices.map((device) => device.id));
+      selectionInitialized = true;
+      const first = devices[0];
+      if (first) {
+        await selectDevice(first.id, first.state);
+      } else {
+        clearSelectedDevice();
+        renderDevices(lastDevices);
+      }
+    }
+
+    async function assignSelectedGroup(group) {
+      const ids = [...selectedDeviceIds];
+      if (!ids.length) {
+        updateStatus("请先选择设备");
+        return;
+      }
+      const response = await fetch("/api/device-group", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids, group })
+      });
+      if (!response.ok) throw new Error("group");
+      updateStatus(group ? `已将 ${ids.length} 台设备设为 ${group}` : `已将 ${ids.length} 台设备移出分组`);
+      await loadDevices();
+    }
+
     async function selectDevice(id, deviceState) {
+      selectedDeviceIds.add(id);
       selectedDeviceId = id;
       selectedDeviceInfo = null;
       selectedDeviceState = deviceState || null;
       selectedDeviceNameId = id;
-      selectedDeviceNameDraft = deviceState?.name || selectedDeviceState?.name || "";
+      selectedDeviceNameDraft = lastDevices.find((device) => device.id === id)?.name || "";
       selectedDeviceNameLocked = false;
       if (deviceState) setState(deviceState);
       await loadDeviceState(id);
@@ -1576,35 +2201,52 @@
       try {
         const response = await fetch(`/api/state?deviceId=${encodeURIComponent(id)}`, { cache: "no-store" });
         if (response.ok) {
-        selectedDeviceState = await response.json();
-        setState(selectedDeviceState);
-        updateRemoteLockButton();
-        updateCrossToggleButton();
-        updateRandomPointsButton();
-      }
+          selectedDeviceState = await response.json();
+          setState(selectedDeviceState);
+          updateRemoteLockButton();
+          updateCrossToggleButton();
+          updateRandomPointsButton();
+        }
       } catch (_) {}
     }
 
     async function setRemoteLock(enabled) {
-      if (!selectedDeviceId) return;
-      await fetch(`/api/state?deviceId=${encodeURIComponent(selectedDeviceId)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ...state(),
-          forceLock: enabled ? "1" : "0",
-          displayLocked: enabled ? "1" : "0",
-          lockCommand: enabled ? "lock" : "unlock",
-          lockCommandId: String(Date.now())
-        })
-      });
-      await loadDeviceState(selectedDeviceId);
+      const targets = selectedTargets();
+      if (!targets.length) return;
+      const commandId = String(Date.now());
+      await Promise.all(targets.map(async (device) => {
+        const response = await fetch(`/api/state?deviceId=${encodeURIComponent(device.id)}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            ...(device.state || {}),
+            forceLock: enabled ? "1" : "0",
+            displayLocked: enabled ? "1" : "0",
+            lockCommand: enabled ? "lock" : "unlock",
+            lockCommandId: commandId
+          })
+        });
+        if (!response.ok) throw new Error("lock");
+      }));
+      updateStatus(`已${enabled ? "锁定" : "解锁"} ${targets.length} 台设备`);
+      if (selectedDeviceId) await loadDeviceState(selectedDeviceId);
       await loadDevices();
     }
 
     function renderDevices(devices) {
-      if (!selectedDeviceId && devices.length) selectedDeviceId = devices[0].id;
+      lastDevices = devices;
+      const validIds = new Set(devices.map((device) => device.id));
+      selectedDeviceIds.forEach((id) => {
+        if (!validIds.has(id)) selectedDeviceIds.delete(id);
+      });
+      if (!selectionInitialized && devices.length) {
+        selectedDeviceIds.add(devices[0].id);
+        selectedDeviceId = devices[0].id;
+        selectionInitialized = true;
+      }
+      updateGroupOptions(devices);
       if (!devices.length) {
+        selectionInitialized = false;
         deviceList.innerHTML = '<div class="readout">暂无投放端在线</div>';
         selectedDeviceInfo = null;
         selectedDeviceState = null;
@@ -1613,31 +2255,57 @@
         saveDeviceNameBtn.disabled = true;
         deviceNameFocused = false;
         currentDeviceLabel.textContent = "当前未选择设备";
+        devicePreviewCanvases = new Map();
         updateRemoteLockButton();
         renderPreview(state());
+        updateSelectionUi();
         return;
       }
       deviceList.innerHTML = "";
+      devicePreviewCanvases = new Map();
       devices.forEach((device) => {
         const button = document.createElement("button");
-        button.className = `device-item${device.id === selectedDeviceId ? " active" : ""}`;
+        button.className = `device-item${device.id === selectedDeviceId ? " active" : ""}${selectedDeviceIds.has(device.id) ? " batch-selected" : ""}${device.online ? "" : " offline"}`;
         const age = Math.max(0, Math.round((Date.now() - device.lastSeen) / 1000));
-        button.innerHTML = `
-          <span>${device.name}<small>${device.width} x ${device.height} | DPR ${device.dpr} | ${age}s 前</small></span>
-          <span class="online-dot${device.online ? "" : " offline"}"></span>
-        `;
-        button.addEventListener("click", () => selectDevice(device.id, device.state));
+        const frame = document.createElement("span");
+        frame.className = "device-thumbnail-frame";
+        const thumbnail = document.createElement("canvas");
+        thumbnail.className = "device-thumbnail";
+        thumbnail.setAttribute("aria-label", `${device.name || device.id} 投放预览`);
+        const deviceWidth = Math.max(1, Number(device.width) || 9);
+        const deviceHeight = Math.max(1, Number(device.height) || 16);
+        thumbnail.style.setProperty("--device-aspect", `${deviceWidth} / ${deviceHeight}`);
+        frame.append(thumbnail);
+        const name = document.createElement("span");
+        name.className = "device-card-name";
+        name.textContent = device.name || device.id;
+        const status = document.createElement("span");
+        status.className = "device-card-status";
+        const dot = document.createElement("span");
+        dot.className = `online-dot${device.online ? "" : " offline"}`;
+        const statusText = document.createElement("span");
+        const groupText = device.group ? ` · ${device.group}` : "";
+        statusText.textContent = device.online ? `${deviceWidth} × ${deviceHeight}${groupText}` : `已离线 · ${age}s${groupText}`;
+        status.append(dot, statusText);
+        const mark = document.createElement("span");
+        mark.className = "device-select-mark";
+        mark.textContent = "✓";
+        mark.setAttribute("aria-hidden", "true");
+        button.append(mark, frame, name, status);
+        button.addEventListener("click", () => toggleDeviceSelection(device));
         deviceList.append(button);
+        devicePreviewCanvases.set(device.id, thumbnail);
+        renderDeviceThumbnail(thumbnail, device.state || state());
       });
-      let selected = devices.find((device) => device.id === selectedDeviceId);
-      if (!selected && devices.length) {
-        selected = devices[0];
-        selectedDeviceId = selected.id;
+      let selected = devices.find((device) => device.id === selectedDeviceId && selectedDeviceIds.has(device.id));
+      if (!selected && selectedDeviceIds.size) {
+        selected = devices.find((device) => selectedDeviceIds.has(device.id));
+        selectedDeviceId = selected?.id || "";
       }
       if (selected?.state) {
         selectedDeviceInfo = selected;
         selectedDeviceState = selected.state;
-        currentDeviceLabel.textContent = `当前设备：${selected.name || selected.id}`;
+        currentDeviceLabel.textContent = `当前编辑：${selected.name || selected.id} · 共选择 ${selectedDeviceIds.size} 台`;
         if (selectedDeviceNameId !== selected.id) {
           selectedDeviceNameId = selected.id;
           selectedDeviceNameDraft = selected.name || "";
@@ -1678,12 +2346,15 @@
         updateCrossToggleButton();
         updateRandomPointsButton();
       }
+      updateSelectionUi();
     }
 
     function updateRemoteLockButton() {
-      const deviceLocked = String(selectedDeviceState?.displayLocked || selectedDeviceState?.forceLock || "0") === "1";
-      forceLockBtn.textContent = deviceLocked ? "远程解锁" : "远程锁定";
-      forceLockBtn.disabled = !selectedDeviceId;
+      const targets = selectedTargets();
+      const allLocked = targets.length > 0 && targets.every((device) => String(device.state?.displayLocked || device.state?.forceLock || "0") === "1");
+      const prefix = targets.length > 1 ? "批量" : "远程";
+      forceLockBtn.textContent = `${prefix}${allLocked ? "解锁" : "锁定"}${targets.length > 1 ? ` (${targets.length})` : ""}`;
+      forceLockBtn.disabled = targets.length === 0;
     }
 
     function updateCrossToggleButton() {
@@ -1700,16 +2371,22 @@
       randomPointsBtn.textContent = active ? "关闭随机点" : "开启随机点";
     }
 
-    function renderPreview(s) {
-      if (role !== "control") return;
-      const rect = previewCanvas.getBoundingClientRect();
+    function renderDeviceThumbnail(targetCanvas, s) {
+      const rect = targetCanvas.getBoundingClientRect();
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       const w = Math.max(1, Math.round(rect.width));
       const h = Math.max(1, Math.round(rect.height));
-      previewCanvas.width = Math.round(w * dpr);
-      previewCanvas.height = Math.round(h * dpr);
-      previewCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawStateToContext(previewCtx, w, h, s);
+      targetCanvas.width = Math.round(w * dpr);
+      targetCanvas.height = Math.round(h * dpr);
+      const targetContext = targetCanvas.getContext("2d", { alpha: false });
+      targetContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawStateToContext(targetContext, w, h, s);
+    }
+
+    function renderPreview(s) {
+      if (role !== "control") return;
+      const selectedCanvas = devicePreviewCanvases.get(selectedDeviceId);
+      if (selectedCanvas) renderDeviceThumbnail(selectedCanvas, s);
     }
 
     async function loadServerInfo() {
@@ -1749,6 +2426,7 @@
     });
 
     lockBtn.addEventListener("click", () => {
+      lockBtn.blur();
       if (locked) unlockProjection();
       else lockProjection();
     });
@@ -1816,6 +2494,19 @@
     });
 
     exportPngBtn.addEventListener("click", exportPng);
+    exportAllPresetsBtn.addEventListener("click", choosePresetExportMode);
+    exportZipBtn.addEventListener("click", () => {
+      closePresetExportChoice();
+      exportAllPresets("zip");
+    });
+    exportFilesBtn.addEventListener("click", () => {
+      closePresetExportChoice();
+      exportAllPresets("files");
+    });
+    cancelExportChoiceBtn.addEventListener("click", closePresetExportChoice);
+    exportChoiceDialog.addEventListener("click", (event) => {
+      if (event.target === exportChoiceDialog) closePresetExportChoice();
+    });
 
     savePresetBtn.addEventListener("click", saveCurrentPreset);
     presetNameInput.addEventListener("keydown", (event) => {
@@ -1844,6 +2535,47 @@
     document.getElementById("displayModeBtn").addEventListener("click", () => startRole("display"));
     document.getElementById("controlModeBtn").addEventListener("click", () => startRole("control"));
     document.getElementById("refreshDevicesBtn").addEventListener("click", loadDevices);
+    selectOnlineBtn.addEventListener("click", () => selectDeviceSet(lastDevices.filter((device) => device.online)));
+    clearSelectionBtn.addEventListener("click", () => {
+      selectedDeviceIds.clear();
+      selectionInitialized = true;
+      clearSelectedDevice();
+      renderDevices(lastDevices);
+    });
+    groupSelect.addEventListener("change", () => {
+      selectGroupBtn.disabled = !groupSelect.value;
+    });
+    selectGroupBtn.addEventListener("click", () => {
+      const group = groupSelect.value;
+      if (!group) return;
+      selectDeviceSet(lastDevices.filter((device) => device.group === group));
+    });
+    assignGroupBtn.addEventListener("click", async () => {
+      const group = groupNameInput.value.trim().slice(0, 40);
+      if (!group) {
+        updateStatus("请输入分组名称");
+        groupNameInput.focus();
+        return;
+      }
+      try {
+        await assignSelectedGroup(group);
+        groupNameInput.value = "";
+        groupSelect.value = group;
+        selectGroupBtn.disabled = false;
+      } catch (_) {
+        updateStatus("设置分组失败");
+      }
+    });
+    clearGroupBtn.addEventListener("click", async () => {
+      try {
+        await assignSelectedGroup("");
+      } catch (_) {
+        updateStatus("移出分组失败");
+      }
+    });
+    groupNameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") assignGroupBtn.click();
+    });
     saveDeviceNameBtn.addEventListener("click", async () => {
       if (!selectedDeviceId) return;
       const nextName = deviceNameInput.value.trim().slice(0, 40);
@@ -1871,16 +2603,23 @@
       }
     });
     forceLockBtn.addEventListener("click", async () => {
-      const deviceLocked = String(selectedDeviceState?.displayLocked || selectedDeviceState?.forceLock || "0") === "1";
-      await setRemoteLock(!deviceLocked);
+      const targets = selectedTargets();
+      const allLocked = targets.length > 0 && targets.every((device) => String(device.state?.displayLocked || device.state?.forceLock || "0") === "1");
+      await setRemoteLock(!allLocked);
     });
     stopServerBtn.addEventListener("click", stopServer);
 
     document.addEventListener("keydown", async (event) => {
-      if (!isLockHotkey(event)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      await toggleLockFromHotkey();
+      if (isLockHotkey(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        await toggleLockFromHotkey();
+        return;
+      }
+      if (locked && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
     }, true);
 
     deviceNameInput.addEventListener("keydown", (event) => {
@@ -1947,6 +2686,7 @@
       }, { passive: false });
     });
 
+    initializeExportResolution();
     loadServerInfo().then(() => {
       const mode = new URLSearchParams(location.search).get("mode");
       if (mode === "control") {

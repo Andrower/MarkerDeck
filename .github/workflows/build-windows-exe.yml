@@ -1,0 +1,43 @@
+name: Build Windows Portable EXE
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: outputs/chroma-cross-platform-package/win/electron-client
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build portable EXE
+        run: pnpm run build:win
+
+      - name: Upload portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: chroma-cross-windows-x64-portable-v1.1.0
+          path: outputs/chroma-cross-platform-package/win/electron-client/dist/*.exe
+          if-no-files-found: error
+          retention-days: 30

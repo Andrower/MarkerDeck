@@ -9,8 +9,8 @@ const ROOT = app.isPackaged
   : path.resolve(__dirname, "..");
 const SERVER_FILE = path.join(ROOT, "chroma-control-server.js");
 const BUNDLED_NODE = path.join(ROOT, "node-windows", "node.exe");
-const LAUNCH_URL = `http://127.0.0.1:${PORT}/chroma-launch.html`;
-const DISPLAY_URL = `http://127.0.0.1:${PORT}/chroma-cross-screen.html?mode=display`;
+const LAUNCH_URL = `http://localhost:${PORT}/chroma-launch.html`;
+const DISPLAY_URL = `http://localhost:${PORT}/chroma-cross-screen.html?mode=display`;
 const UNLOCK_ACCELERATOR = "CommandOrControl+Alt+Shift+L";
 
 let mainWindow = null;
@@ -67,6 +67,8 @@ function shouldBlockInput(input) {
   if (isUnlock) return false;
   if (key === "f4" && input.alt) return true;
   if (key === "escape" || key === "f11") return true;
+  if (key === "enter" || key === " " || key === "space") return true;
+  if (key === "meta" || key === "super") return true;
   if (input.control || input.meta || input.alt) return true;
   return ["browserback", "browserforward", "mediastop"].includes(key);
 }

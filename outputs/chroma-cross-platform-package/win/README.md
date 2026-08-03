@@ -21,7 +21,7 @@ Optional Windows exe client:
 
 - `electron-client` contains the desktop shell source for building a portable `.exe`.
 - The exe shell starts the same local service, opens the launch page, and uses stronger display locking in Electron.
-- While locked it blocks common exit shortcuts such as `Alt+F4`, `Esc`, `F11`, `Ctrl+W`, and `Ctrl+R`.
+- While locked it blocks common exit shortcuts such as `Alt+F4`, `Esc`, `F11`, `Enter`, `Space`, `Ctrl+W`, and `Ctrl+R`.
 - Unlock hotkey: `Ctrl + Alt + Shift + L`.
 
 Build on Windows:
@@ -34,4 +34,4 @@ npm run build:win
 
 The generated portable exe will appear in `electron-client\dist`.
 
-Note: Windows system-level actions such as `Ctrl + Alt + Delete`, the power key, and Task Manager force-ending the process cannot be fully blocked by a normal app.
+Note: Windows-key events are blocked when they reach the client, but Windows handles the Windows key and some combinations before the app receives them. Fully disabling it requires Windows Assigned Access/kiosk policy, Group Policy, or a privileged native keyboard filter. System-level actions such as `Ctrl + Alt + Delete`, the power key, and Task Manager force-ending the process cannot be fully blocked by a normal app.
