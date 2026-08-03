@@ -9,9 +9,6 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: outputs/chroma-cross-platform-package/win/electron-client
 
     steps:
       - name: Check out repository
@@ -28,16 +25,33 @@ jobs:
           version: 11.9.0
           run_install: false
 
+      - name: Prepare short build path and bundled Node.js
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "outputs/chroma-cross-platform-package/win"
+          New-Item -ItemType Directory -Force "C:\chroma\win" | Out-Null
+          Copy-Item -Path "$source\*" -Destination "C:\chroma\win" -Recurse -Force
+          New-Item -ItemType Directory -Force "C:\chroma\win\node-windows" | Out-Null
+          Copy-Item -Path (Get-Command node).Source -Destination "C:\chroma\win\node-windows\node.exe" -Force
+
       - name: Install dependencies
+        working-directory: C:\chroma\win\electron-client
         run: pnpm install --frozen-lockfile
 
       - name: Build portable EXE
+        working-directory: C:\chroma\win\electron-client
         run: pnpm run build:win
+
+      - name: Collect portable EXE
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\artifacts" | Out-Null
+          Copy-Item -Path "C:\chroma\win\electron-client\dist\*.exe" -Destination "$env:GITHUB_WORKSPACE\artifacts" -Force
 
       - name: Upload portable EXE
         uses: actions/upload-artifact@v4
         with:
           name: chroma-cross-windows-x64-portable-v1.1.0
-          path: outputs/chroma-cross-platform-package/win/electron-client/dist/*.exe
+          path: artifacts/*.exe
           if-no-files-found: error
           retention-days: 30
