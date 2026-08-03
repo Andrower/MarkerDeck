@@ -2,9 +2,18 @@ name: Build Windows Portable EXE
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the EXE to a GitHub Release
+        type: boolean
+        default: false
+      release_tag:
+        description: Release tag used when publishing
+        type: string
+        default: v1.1.0
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -55,3 +64,18 @@ jobs:
           path: artifacts/*.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        if: ${{ inputs.publish_release }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          $exe = Get-ChildItem "$env:GITHUB_WORKSPACE\artifacts\*.exe" | Select-Object -First 1
+          $notes = @"
+          Windows x64 portable client for Chroma Cross v1.1.0.
+
+          Includes the local control server and a bundled Node.js runtime. No Node.js installation is required.
+          "@
+          gh release create $env:RELEASE_TAG $exe.FullName --target $env:GITHUB_SHA --title "Chroma Cross v1.1.0" --notes $notes
