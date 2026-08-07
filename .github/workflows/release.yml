@@ -89,6 +89,8 @@ jobs:
 
       - name: Prepare Windows runtimes
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           New-Item -ItemType Directory -Force "runtime\windows\node-windows" | Out-Null
           Copy-Item -Path (Get-Command node).Source -Destination "runtime\windows\node-windows\node.exe" -Force
