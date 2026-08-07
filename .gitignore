@@ -20,6 +20,8 @@ release/
 # Bundled runtimes are too large for a normal GitHub repo.
 node-macos/
 node-windows/
+ffmpeg-macos/
+ffmpeg-windows/
 
 # Android/Gradle generated files
 .idea/
