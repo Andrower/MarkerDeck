@@ -1,18 +1,35 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+set "SCRIPT_DIR=%~dp0"
+
+if exist "%SCRIPT_DIR%app\chroma-control-server.js" (
+  set "APP_DIR=%SCRIPT_DIR%app"
+  set "RUNTIME_DIR=%SCRIPT_DIR%runtime"
+  if "%CHROMA_DATA_DIR%"=="" set "CHROMA_DATA_DIR=%SCRIPT_DIR%data"
+) else (
+  for %%I in ("%SCRIPT_DIR%..\..") do set "REPO_ROOT=%%~fI"
+  set "APP_DIR=%REPO_ROOT%\src"
+  set "RUNTIME_DIR=%REPO_ROOT%\runtime\windows"
+  if "%CHROMA_DATA_DIR%"=="" set "CHROMA_DATA_DIR=%REPO_ROOT%\.data"
+)
+
+cd /d "%APP_DIR%"
 
 if "%PORT%"=="" set PORT=8765
 
-set "NODE_EXE=%~dp0node-windows\node.exe"
+set "NODE_EXE=%RUNTIME_DIR%\node-windows\node.exe"
 if not exist "%NODE_EXE%" (
-  echo Node.js not found.
-  echo Missing bundled node.exe in node-windows\.
-  pause
-  exit /b 1
+  where node >nul 2>nul
+  if errorlevel 1 (
+    echo Node.js not found.
+    echo The portable package should include runtime\node-windows\node.exe.
+    pause
+    exit /b 1
+  )
+  set "NODE_EXE=node"
 )
 
-set "FFMPEG_EXE=%~dp0ffmpeg-windows\ffmpeg.exe"
+set "FFMPEG_EXE=%RUNTIME_DIR%\ffmpeg-windows\ffmpeg.exe"
 if exist "%FFMPEG_EXE%" (
   set "FFMPEG_PATH=%FFMPEG_EXE%"
 ) else (
@@ -24,8 +41,8 @@ if exist "%FFMPEG_EXE%" (
   )
 )
 
-if not exist chroma-control-server.js (
-  echo Missing chroma-control-server.js.
+if not exist "%APP_DIR%\chroma-control-server.js" (
+  echo Missing application files in %APP_DIR%.
   pause
   exit /b 1
 )
@@ -48,5 +65,5 @@ echo Press Control-C to stop the service.
 echo.
 
 start "" "%LAUNCH_URL%"
-"%NODE_EXE%" chroma-control-server.js
+"%NODE_EXE%" "%APP_DIR%\chroma-control-server.js"
 pause

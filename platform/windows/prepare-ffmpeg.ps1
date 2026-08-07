@@ -1,7 +1,14 @@
+param(
+  [string]$Destination
+)
+
 $ErrorActionPreference = "Stop"
 
-$destination = Join-Path $PSScriptRoot "ffmpeg-windows"
-$binary = Join-Path $destination "ffmpeg.exe"
+if (-not $Destination) {
+  $Destination = Join-Path $PSScriptRoot "..\..\runtime\windows\ffmpeg-windows"
+}
+$Destination = [System.IO.Path]::GetFullPath($Destination)
+$binary = Join-Path $Destination "ffmpeg.exe"
 if (Test-Path $binary) {
   Write-Host "FFmpeg already prepared: $binary"
   exit 0
@@ -13,7 +20,7 @@ $expanded = Join-Path $temporary "expanded"
 $downloadUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 
 try {
-  New-Item -ItemType Directory -Force $temporary, $expanded, $destination | Out-Null
+  New-Item -ItemType Directory -Force $temporary, $expanded, $Destination | Out-Null
   Write-Host "Downloading FFmpeg release essentials..."
   Invoke-WebRequest -Uri $downloadUrl -OutFile $archive
   Expand-Archive -Path $archive -DestinationPath $expanded -Force

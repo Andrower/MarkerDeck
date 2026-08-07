@@ -6,7 +6,7 @@
   "description": "Desktop locked client shell for Chroma Cross",
   "scripts": {
     "start": "electron .",
-    "prepare:ffmpeg:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ../prepare-ffmpeg-windows.ps1",
+    "prepare:ffmpeg:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../platform/windows/prepare-ffmpeg.ps1",
     "build:win": "pnpm run prepare:ffmpeg:win && electron-builder --win portable --x64"
   },
   "devDependencies": {
@@ -22,14 +22,25 @@
     ],
     "extraResources": [
       {
-        "from": "..",
+        "from": "../../src",
         "to": "server",
         "filter": [
           "chroma-control-server.js",
-          "chroma-cross-screen.html",
-          "chroma-launch.html",
-          "node-windows/**",
-          "ffmpeg-windows/**"
+          "web/**"
+        ]
+      },
+      {
+        "from": "../../runtime/windows/node-windows",
+        "to": "server/node-windows",
+        "filter": [
+          "node.exe"
+        ]
+      },
+      {
+        "from": "../../runtime/windows/ffmpeg-windows",
+        "to": "server/ffmpeg-windows",
+        "filter": [
+          "**/*"
         ]
       }
     ],

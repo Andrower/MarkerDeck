@@ -6,7 +6,7 @@ const path = require("node:path");
 const PORT = Number(process.env.PORT || 8765);
 const ROOT = app.isPackaged
   ? path.join(process.resourcesPath, "server")
-  : path.resolve(__dirname, "..");
+  : path.resolve(__dirname, "..", "..", "src");
 const SERVER_FILE = path.join(ROOT, "chroma-control-server.js");
 const BUNDLED_NODE = path.join(ROOT, "node-windows", "node.exe");
 const LAUNCH_URL = `http://localhost:${PORT}/chroma-launch.html`;
