@@ -88,6 +88,23 @@ http://localhost:8765/chroma-launch.html
 - MP4 导出由 FFmpeg 完成
 - 生成的 ZIP、EXE、Node.js 和 FFmpeg 运行时不提交到普通 Git 历史，而是放入 GitHub Releases
 
+常用命令：
+
+```bash
+npm start
+npm run check
+npm run package:mac
+```
+
+更多说明：
+
+- [项目结构](docs/architecture.md)
+- [macOS 使用说明](docs/macos.md)
+- [Windows 使用说明](docs/windows.md)
+- [Electron 桌面客户端](docs/desktop-client.md)
+- [视频导出](docs/video-export.md)
+- [版本与回滚](docs/rollback.md)
+
 ## 许可
 
 项目源码使用 [MIT License](LICENSE)。FFmpeg 及其第三方构建使用各自的许可证；分发包含 FFmpeg 的运行包时必须保留对应许可文件。
