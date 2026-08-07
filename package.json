@@ -1,0 +1,17 @@
+{
+  "name": "chroma-cross-platform",
+  "version": "1.2.0",
+  "private": true,
+  "description": "LAN chroma screen controller for production tracking",
+  "scripts": {
+    "start": "node src/chroma-control-server.js",
+    "check": "node scripts/check-project.js",
+    "package:mac": "zsh scripts/package-macos.sh",
+    "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1",
+    "desktop:install": "pnpm --dir desktop/electron install --frozen-lockfile",
+    "desktop:win": "pnpm --dir desktop/electron run build:win"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
