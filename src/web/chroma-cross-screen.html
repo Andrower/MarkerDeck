@@ -352,7 +352,17 @@
       gap: 8px;
     }
 
-    .export-resolution input {
+    .video-duration {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 12px;
+    }
+
+    .export-resolution input,
+    .video-duration input {
       min-width: 0;
       min-height: 40px;
       padding: 0 10px;
@@ -367,7 +377,8 @@
       -webkit-user-select: text;
     }
 
-    .export-resolution input:focus {
+    .export-resolution input:focus,
+    .video-duration input:focus {
       border-color: rgba(255, 255, 255, 0.52);
     }
 
@@ -906,6 +917,54 @@
       border: 1px solid rgba(255, 255, 255, 0.18);
     }
 
+    .video-progress-window {
+      position: fixed;
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(16px, env(safe-area-inset-bottom));
+      z-index: 130;
+      display: grid;
+      gap: 10px;
+      width: min(340px, calc(100vw - 32px));
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: #17221a;
+      color: #fff;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.42);
+    }
+
+    .video-progress-window.hidden {
+      display: none;
+    }
+
+    .video-progress-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .video-progress-window progress {
+      width: 100%;
+      height: 10px;
+      accent-color: #58df72;
+    }
+
+    .video-progress-window.failed progress {
+      accent-color: #ff6b6b;
+    }
+
+    .video-progress-detail {
+      overflow: hidden;
+      color: rgba(255, 255, 255, 0.66);
+      font-size: 12px;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     @media (max-width: 420px) {
       .export-choice-actions {
         grid-template-columns: 1fr;
@@ -994,6 +1053,27 @@
         <button id="cancelExportChoiceBtn" class="cancel-button" type="button">取消</button>
       </div>
     </div>
+  </div>
+
+  <div class="name-dialog hidden" id="videoExportChoiceDialog" role="dialog" aria-modal="true" aria-labelledby="videoExportChoiceTitle">
+    <div class="name-dialog-card">
+      <h2 id="videoExportChoiceTitle">选择视频导出方式</h2>
+      <p>将全部预设转换为一个 ZIP 压缩包，或分别保存为多个 MP4 文件。</p>
+      <div class="export-choice-actions">
+        <button id="exportVideoZipBtn" type="button">ZIP 压缩包</button>
+        <button id="exportVideoFilesBtn" class="secondary-button" type="button">多个 MP4 文件</button>
+        <button id="cancelVideoExportChoiceBtn" class="cancel-button" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="video-progress-window hidden" id="videoProgressWindow" role="status" aria-live="polite">
+    <div class="video-progress-title">
+      <span id="videoProgressTitle">正在生成视频</span>
+      <span id="videoProgressPercent">0%</span>
+    </div>
+    <progress id="videoProgressBar" max="100" value="0"></progress>
+    <div class="video-progress-detail" id="videoProgressDetail">正在准备画面</div>
   </div>
 
   <section class="launcher" id="launcher">
@@ -1155,6 +1235,16 @@
         <button id="exportAllPresetsBtn">导出全部预设</button>
       </div>
       <p class="export-note">尺寸单位为最终图片像素。批量导出会保存预设列表中的全部画面。</p>
+      <div class="video-duration">
+        <span>视频时长</span>
+        <input id="videoDuration" type="number" min="0.1" max="3600" step="0.1" value="5" inputmode="decimal" aria-label="静态视频时长">
+        <span>秒</span>
+      </div>
+      <div class="export-actions">
+        <button id="exportVideoBtn">导出当前 MP4</button>
+        <button id="exportAllVideosBtn">导出全部预设 MP4</button>
+      </div>
+      <p class="export-note">MP4 由本地 FFmpeg 服务生成。奇数尺寸会自动补齐 1 像素以兼容 H.264。</p>
         </div>
         </section>
       </div>
@@ -1198,8 +1288,20 @@
     const exportZipBtn = document.getElementById("exportZipBtn");
     const exportFilesBtn = document.getElementById("exportFilesBtn");
     const cancelExportChoiceBtn = document.getElementById("cancelExportChoiceBtn");
+    const videoExportChoiceDialog = document.getElementById("videoExportChoiceDialog");
+    const exportVideoZipBtn = document.getElementById("exportVideoZipBtn");
+    const exportVideoFilesBtn = document.getElementById("exportVideoFilesBtn");
+    const cancelVideoExportChoiceBtn = document.getElementById("cancelVideoExportChoiceBtn");
     const exportWidthInput = document.getElementById("exportWidth");
     const exportHeightInput = document.getElementById("exportHeight");
+    const videoDurationInput = document.getElementById("videoDuration");
+    const exportVideoBtn = document.getElementById("exportVideoBtn");
+    const exportAllVideosBtn = document.getElementById("exportAllVideosBtn");
+    const videoProgressWindow = document.getElementById("videoProgressWindow");
+    const videoProgressTitle = document.getElementById("videoProgressTitle");
+    const videoProgressPercent = document.getElementById("videoProgressPercent");
+    const videoProgressBar = document.getElementById("videoProgressBar");
+    const videoProgressDetail = document.getElementById("videoProgressDetail");
     const displayNameDialog = document.getElementById("displayNameDialog");
     const displayNameForm = document.getElementById("displayNameForm");
     const displayNameInput = document.getElementById("displayNameInput");
@@ -1529,6 +1631,12 @@
       return { width, height };
     }
 
+    function readVideoDuration() {
+      const duration = Number(videoDurationInput.value);
+      if (!Number.isFinite(duration) || duration < 0.1 || duration > 3600) throw new Error("video-duration");
+      return Math.round(duration * 10) / 10;
+    }
+
     function safeFilePart(value, fallback) {
       const cleaned = String(value || "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").replace(/\s+/g, " ").trim();
       return (cleaned || fallback).slice(0, 60);
@@ -1646,6 +1754,178 @@
     function closePresetExportChoice() {
       exportChoiceDialog.classList.add("hidden");
       exportAllPresetsBtn.focus();
+    }
+
+    function chooseVideoExportMode() {
+      videoExportChoiceDialog.classList.remove("hidden");
+      exportVideoZipBtn.focus();
+    }
+
+    function closeVideoExportChoice() {
+      videoExportChoiceDialog.classList.add("hidden");
+      exportAllVideosBtn.focus();
+    }
+
+    let videoProgressHideTimer = null;
+
+    function showVideoProgress(title, detail, percent) {
+      if (videoProgressHideTimer) clearTimeout(videoProgressHideTimer);
+      const normalized = Math.max(0, Math.min(100, Number(percent) || 0));
+      videoProgressWindow.classList.remove("hidden", "failed");
+      videoProgressTitle.textContent = title;
+      videoProgressDetail.textContent = detail;
+      videoProgressBar.value = normalized;
+      videoProgressPercent.textContent = `${Math.round(normalized)}%`;
+    }
+
+    function finishVideoProgress(detail, failed = false) {
+      videoProgressWindow.classList.toggle("failed", failed);
+      videoProgressTitle.textContent = failed ? "视频生成失败" : "视频生成完成";
+      videoProgressDetail.textContent = detail;
+      if (!failed) {
+        videoProgressBar.value = 100;
+        videoProgressPercent.textContent = "100%";
+      }
+      videoProgressHideTimer = setTimeout(() => videoProgressWindow.classList.add("hidden"), failed ? 3500 : 1800);
+    }
+
+    async function makeMp4Blob(renderState, size, duration, onProgress = () => {}) {
+      if (!serverMode) throw new Error("video-service");
+      const png = await makePngBlob(renderState, size);
+      onProgress(1);
+      const startResponse = await fetch(`/api/video/start?duration=${encodeURIComponent(duration)}`, {
+        method: "POST",
+        headers: { "content-type": "image/png" },
+        body: png
+      });
+      if (!startResponse.ok) {
+        const detail = await startResponse.text();
+        if (detail.includes("ffmpeg-not-found")) throw new Error("ffmpeg-not-found");
+        if (startResponse.status === 429) throw new Error("video-busy");
+        throw new Error("video-conversion");
+      }
+      const { id } = await startResponse.json();
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 220));
+        const statusResponse = await fetch(`/api/video/status?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (!statusResponse.ok) throw new Error("video-conversion");
+        const job = await statusResponse.json();
+        onProgress(job.progress || 0);
+        if (job.status === "failed") {
+          if (String(job.error || "").includes("ffmpeg-not-found")) throw new Error("ffmpeg-not-found");
+          throw new Error("video-conversion");
+        }
+        if (job.status === "ready") break;
+      }
+      const resultResponse = await fetch(`/api/video/result?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (!resultResponse.ok) throw new Error("video-conversion");
+      onProgress(100);
+      return resultResponse.blob();
+    }
+
+    function videoExportMessage(error, batch = false) {
+      if (error?.message === "resolution") return "请输入 64 至 16384 的有效分辨率";
+      if (error?.message === "resolution-too-large") return "分辨率过大，总像素不能超过 6710 万";
+      if (error?.message === "video-duration") return "视频时长需在 0.1 至 3600 秒之间";
+      if (error?.message === "video-service") return "请通过本地控制服务打开页面后导出视频";
+      if (error?.message === "ffmpeg-not-found") return "未找到 FFmpeg，请检查服务端运行时";
+      if (error?.message === "video-busy") return "已有视频正在生成，请稍后重试";
+      if (error?.name === "AbortError") return batch ? "已取消批量视频导出" : "已取消视频导出";
+      return batch ? "批量视频导出失败" : "MP4 导出失败";
+    }
+
+    async function exportVideo() {
+      exportVideoBtn.disabled = true;
+      exportAllVideosBtn.disabled = true;
+      exportVideoBtn.textContent = "正在生成 MP4";
+      try {
+        const size = readExportSize();
+        const duration = readVideoDuration();
+        showVideoProgress("正在生成视频", `${size.width} × ${size.height} · ${duration} 秒`, 0);
+        const blob = await makeMp4Blob(state(), size, duration, (progress) => {
+          showVideoProgress("正在生成视频", `${size.width} × ${size.height} · ${duration} 秒`, progress);
+        });
+        const durationLabel = String(duration).replace(".", "p");
+        const fileName = `chroma-screen-${size.width}x${size.height}-${durationLabel}s-${exportTimestamp()}.mp4`;
+        if (typeof window.showSaveFilePicker === "function") {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+        } else {
+          downloadBlob(blob, fileName);
+        }
+        updateStatus(`MP4 已导出 · ${duration} 秒`);
+        finishVideoProgress("文件已保存");
+      } catch (error) {
+        const message = videoExportMessage(error);
+        updateStatus(message);
+        finishVideoProgress(message, true);
+      } finally {
+        exportVideoBtn.disabled = false;
+        exportAllVideosBtn.disabled = false;
+        exportVideoBtn.textContent = "导出当前 MP4";
+      }
+    }
+
+    async function exportAllVideos(mode) {
+      if (!presets.length) {
+        updateStatus("暂无可导出的预设");
+        return;
+      }
+      exportVideoBtn.disabled = true;
+      exportAllVideosBtn.disabled = true;
+      const originalLabel = exportAllVideosBtn.textContent;
+      try {
+        const size = readExportSize();
+        const duration = readVideoDuration();
+        const durationLabel = String(duration).replace(".", "p");
+        const directory = mode === "files" && typeof window.showDirectoryPicker === "function"
+          ? await window.showDirectoryPicker({ mode: "readwrite" })
+          : null;
+        const zipFiles = [];
+        showVideoProgress("正在批量生成视频", `共 ${presets.length} 个预设`, 0);
+        for (let index = 0; index < presets.length; index += 1) {
+          const preset = presets[index];
+          exportAllVideosBtn.textContent = `正在生成 ${index + 1}/${presets.length}`;
+          const blob = await makeMp4Blob(preset.state || {}, size, duration, (progress) => {
+            const overall = ((index + progress / 100) / presets.length) * 100;
+            showVideoProgress("正在批量生成视频", `${index + 1}/${presets.length} · ${preset.name}`, overall);
+          });
+          const order = String(index + 1).padStart(2, "0");
+          const name = safeFilePart(preset.name, `preset-${order}`);
+          const fileName = `${order}-${name}-${size.width}x${size.height}-${durationLabel}s.mp4`;
+          if (mode === "zip") {
+            zipFiles.push({ name: fileName, blob });
+          } else if (directory) {
+            const handle = await directory.getFileHandle(fileName, { create: true });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+          } else {
+            downloadBlob(blob, fileName);
+            await new Promise((resolve) => setTimeout(resolve, 160));
+          }
+        }
+        if (mode === "zip") {
+          exportAllVideosBtn.textContent = "正在生成 ZIP";
+          const zip = await makeZipBlob(zipFiles);
+          downloadBlob(zip, `chroma-videos-${size.width}x${size.height}-${durationLabel}s.zip`);
+        }
+        updateStatus(`已导出 ${presets.length} 个 MP4 · 每个 ${duration} 秒`);
+        finishVideoProgress(`已完成 ${presets.length} 个视频`);
+      } catch (error) {
+        const message = videoExportMessage(error, true);
+        updateStatus(message);
+        finishVideoProgress(message, true);
+      } finally {
+        exportVideoBtn.disabled = false;
+        exportAllVideosBtn.disabled = false;
+        exportAllVideosBtn.textContent = originalLabel;
+      }
     }
 
     async function exportPng() {
@@ -2506,6 +2786,20 @@
     cancelExportChoiceBtn.addEventListener("click", closePresetExportChoice);
     exportChoiceDialog.addEventListener("click", (event) => {
       if (event.target === exportChoiceDialog) closePresetExportChoice();
+    });
+    exportVideoBtn.addEventListener("click", exportVideo);
+    exportAllVideosBtn.addEventListener("click", chooseVideoExportMode);
+    exportVideoZipBtn.addEventListener("click", () => {
+      closeVideoExportChoice();
+      exportAllVideos("zip");
+    });
+    exportVideoFilesBtn.addEventListener("click", () => {
+      closeVideoExportChoice();
+      exportAllVideos("files");
+    });
+    cancelVideoExportChoiceBtn.addEventListener("click", closeVideoExportChoice);
+    videoExportChoiceDialog.addEventListener("click", (event) => {
+      if (event.target === videoExportChoiceDialog) closeVideoExportChoice();
     });
 
     savePresetBtn.addEventListener("click", saveCurrentPreset);

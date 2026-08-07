@@ -2,23 +2,53 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
 
-NODE_BIN="$SCRIPT_DIR/node-macos/node"
+if [ -f "$SCRIPT_DIR/app/chroma-control-server.js" ]; then
+  APP_DIR="$SCRIPT_DIR/app"
+  RUNTIME_DIR="$SCRIPT_DIR/runtime"
+  export CHROMA_DATA_DIR="${CHROMA_DATA_DIR:-$SCRIPT_DIR/data}"
+else
+  REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+  APP_DIR="$REPO_ROOT/src"
+  RUNTIME_DIR="$REPO_ROOT/runtime/macos"
+  export CHROMA_DATA_DIR="${CHROMA_DATA_DIR:-$REPO_ROOT/.data}"
+fi
+
+cd "$APP_DIR"
+
+NODE_BIN="$RUNTIME_DIR/node-macos/node"
 if [ ! -x "$NODE_BIN" ]; then
   if command -v node >/dev/null 2>&1; then
     NODE_BIN="$(command -v node)"
   else
     echo "Node.js not found."
-    echo "This package should include node-macos/node. If it was removed, install Node.js and run again."
+    echo "The portable package should include runtime/node-macos/node. Install Node.js if the runtime was removed."
     read -r "?Press Enter to close..."
     exit 1
   fi
 fi
 
+FFMPEG_BIN="$RUNTIME_DIR/ffmpeg-macos/ffmpeg"
+if [ ! -x "$FFMPEG_BIN" ]; then
+  if [ -x "/opt/homebrew/bin/ffmpeg" ]; then
+    FFMPEG_BIN="/opt/homebrew/bin/ffmpeg"
+  elif [ -x "/usr/local/bin/ffmpeg" ]; then
+    FFMPEG_BIN="/usr/local/bin/ffmpeg"
+  elif command -v ffmpeg >/dev/null 2>&1; then
+    FFMPEG_BIN="$(command -v ffmpeg)"
+  else
+    FFMPEG_BIN=""
+  fi
+fi
+if [ -n "$FFMPEG_BIN" ]; then
+  export FFMPEG_PATH="$FFMPEG_BIN"
+else
+  echo "Warning: FFmpeg not found. PNG export works, but MP4 export is unavailable."
+fi
+
 BASE_PORT="${PORT:-8765}"
-if [ ! -f "$SCRIPT_DIR/chroma-control-server.js" ] || [ ! -f "$SCRIPT_DIR/chroma-cross-screen.html" ] || [ ! -f "$SCRIPT_DIR/chroma-launch.html" ]; then
-  echo "Missing server files. Keep chroma-control-server.js, chroma-cross-screen.html, and chroma-launch.html next to this launcher."
+if [ ! -f "$APP_DIR/chroma-control-server.js" ] || [ ! -f "$APP_DIR/web/chroma-cross-screen.html" ] || [ ! -f "$APP_DIR/web/chroma-launch.html" ]; then
+  echo "Missing application files in $APP_DIR."
   read -r "?Press Enter to close..."
   exit 1
 fi
@@ -46,15 +76,16 @@ DISPLAY_URL="http://$LAN_IP:$PORT/chroma-cross-screen.html?mode=display"
 CONTROL_URL="http://$LAN_IP:$PORT/chroma-cross-screen.html?mode=control"
 
 echo "Chroma Cross Server"
-echo "Files: $SCRIPT_DIR"
+echo "Files: $APP_DIR"
 echo "Local URL: $LAUNCH_URL"
 echo "Mobile URL: $MOBILE_URL"
 echo "Display URL: $DISPLAY_URL"
 echo "Control URL: $CONTROL_URL"
+if [ -n "$FFMPEG_BIN" ]; then echo "FFmpeg: $FFMPEG_BIN"; fi
 echo
 echo "Keep this window open while using the phones."
 echo "Press Control-C to stop the service."
 echo
 
 (sleep 1; open "$LAUNCH_URL" >/dev/null 2>&1 || true) &
-"$NODE_BIN" chroma-control-server.js
+"$NODE_BIN" "$APP_DIR/chroma-control-server.js"

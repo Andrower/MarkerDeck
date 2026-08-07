@@ -1,0 +1,149 @@
+name: Build cross-platform release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without the v prefix
+        required: true
+        default: "1.2.0"
+      publish_release:
+        description: Upload packages to a GitHub Release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - id: release
+        name: Resolve release version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PUBLISH: ${{ inputs.publish_release }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            tag="$GITHUB_REF_NAME"
+            publish="true"
+          else
+            version="$INPUT_VERSION"
+            tag="v$INPUT_VERSION"
+            publish="$INPUT_PUBLISH"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: prepare
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare Node.js arm64 runtime
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/node-arm64.tar.gz" \
+            "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-arm64.tar.gz"
+          tar -xzf "$RUNNER_TEMP/node-arm64.tar.gz" -C "$RUNNER_TEMP"
+          mkdir -p runtime/macos/node-macos
+          cp "$RUNNER_TEMP/node-v24.14.0-darwin-arm64/bin/node" runtime/macos/node-macos/node
+          chmod +x runtime/macos/node-macos/node
+
+      - name: Package macOS arm64
+        run: ./scripts/package-macos.sh "${{ needs.prepare.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chroma-cross-macos-arm64-${{ needs.prepare.outputs.version }}
+          path: artifacts/chroma-cross-macos-arm64-v${{ needs.prepare.outputs.version }}.zip
+          if-no-files-found: error
+
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+
+      - name: Prepare Windows runtimes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "runtime\windows\node-windows" | Out-Null
+          Copy-Item -Path (Get-Command node).Source -Destination "runtime\windows\node-windows\node.exe" -Force
+          .\platform\windows\prepare-ffmpeg.ps1
+
+      - name: Package Windows ZIP
+        shell: pwsh
+        run: .\scripts\package-windows.ps1 -Version "${{ needs.prepare.outputs.version }}"
+
+      - name: Install desktop dependencies
+        working-directory: desktop/electron
+        run: pnpm install --frozen-lockfile
+
+      - name: Set desktop package version
+        working-directory: desktop/electron
+        shell: pwsh
+        run: |
+          $package = Get-Content "package.json" -Raw | ConvertFrom-Json
+          $package.version = "${{ needs.prepare.outputs.version }}"
+          $package | ConvertTo-Json -Depth 20 | Set-Content "package.json" -Encoding utf8
+
+      - name: Build portable EXE
+        working-directory: desktop/electron
+        run: pnpm exec electron-builder --win portable --x64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chroma-cross-windows-x64-${{ needs.prepare.outputs.version }}
+          path: |
+            artifacts/chroma-cross-windows-x64-v${{ needs.prepare.outputs.version }}.zip
+            desktop/electron/dist/*.exe
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, macos, windows]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --target "$GITHUB_SHA" \
+              --title "Chroma Cross v$RELEASE_VERSION" \
+              --generate-notes
+          fi
+          find artifacts -type f \( -name "*.zip" -o -name "*.exe" \) -print0 \
+            | xargs -0 gh release upload "$RELEASE_TAG" --clobber

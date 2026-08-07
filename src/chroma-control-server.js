@@ -4,10 +4,17 @@ const http = require("node:http");
 const os = require("node:os");
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawn } = require("node:child_process");
 
 const PORT = Number(process.env.PORT || 8765);
 const ROOT = __dirname;
-const PRESETS_FILE = path.join(ROOT, "chroma-presets.json");
+const WEB_ROOT = path.join(ROOT, "web");
+const DATA_ROOT = process.env.CHROMA_DATA_DIR
+  ? path.resolve(process.env.CHROMA_DATA_DIR)
+  : process.cwd();
+const PRESETS_FILE = process.env.CHROMA_PRESETS_FILE
+  ? path.resolve(process.env.CHROMA_PRESETS_FILE)
+  : path.join(DATA_ROOT, "chroma-presets.json");
 const PAGES = new Set([
   "chroma-cross-screen.html",
   "chroma-launch.html"
@@ -58,6 +65,8 @@ const defaultPresets = [
 let state = { ...defaultState };
 const devices = new Map();
 let nextDeviceOrder = 1;
+let activeVideoJobs = 0;
+const videoJobs = new Map();
 
 function cleanPreset(preset, fallbackId) {
   const name = String(preset?.name || "").trim().slice(0, 40);
@@ -82,6 +91,7 @@ function loadPresets() {
 }
 
 function savePresets() {
+  fs.mkdirSync(path.dirname(PRESETS_FILE), { recursive: true });
   const temporaryFile = `${PRESETS_FILE}.tmp`;
   fs.writeFileSync(temporaryFile, JSON.stringify(presets, null, 2), "utf8");
   fs.renameSync(temporaryFile, PRESETS_FILE);
@@ -147,6 +157,116 @@ function readBody(req) {
     req.on("end", () => resolve(data));
     req.on("error", reject);
   });
+}
+
+function readBinaryBody(req, limit = 70 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let tooLarge = false;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        tooLarge = true;
+        chunks.length = 0;
+        return;
+      }
+      if (!tooLarge) chunks.push(chunk);
+    });
+    req.on("end", () => tooLarge ? reject(new Error("image-too-large")) : resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+function ffmpegExecutable() {
+  if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
+  const directory = process.platform === "win32" ? "ffmpeg-windows" : "ffmpeg-macos";
+  const executable = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const bundledCandidates = [
+    path.join(ROOT, directory, executable),
+    path.join(ROOT, "..", "runtime", process.platform === "win32" ? "windows" : "macos", directory, executable)
+  ];
+  return bundledCandidates.find((candidate) => fs.existsSync(candidate)) || "ffmpeg";
+}
+
+function makeStaticVideo(png, duration, onProgress = () => {}) {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "chroma-video-"));
+  const inputFile = path.join(temporaryDirectory, "frame.png");
+  const outputFile = path.join(temporaryDirectory, "output.mp4");
+  fs.writeFileSync(inputFile, png);
+
+  return new Promise((resolve, reject) => {
+    const errors = [];
+    const processHandle = spawn(ffmpegExecutable(), [
+      "-hide_banner", "-loglevel", "error", "-y",
+      "-loop", "1", "-framerate", "10", "-i", inputFile,
+      "-t", duration.toFixed(3),
+      "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p",
+      "-c:v", "libx264", "-preset", "medium", "-tune", "stillimage",
+      "-r", "10", "-movflags", "+faststart", "-an",
+      "-progress", "pipe:1", "-nostats", outputFile
+    ], { windowsHide: true });
+    let progressOutput = "";
+    processHandle.stdout.on("data", (chunk) => {
+      progressOutput += chunk.toString("utf8");
+      const lines = progressOutput.split(/\r?\n/);
+      progressOutput = lines.pop() || "";
+      lines.forEach((line) => {
+        const [key, value] = line.split("=");
+        if (key === "out_time_us") {
+          const percent = Math.max(0, Math.min(99, (Number(value) / (duration * 1000000)) * 100));
+          if (Number.isFinite(percent)) onProgress(percent);
+        }
+        if (key === "progress" && value === "end") onProgress(100);
+      });
+    });
+    processHandle.stderr.on("data", (chunk) => errors.push(chunk));
+    processHandle.on("error", (error) => reject(new Error(error.code === "ENOENT" ? "ffmpeg-not-found" : error.message)));
+    processHandle.on("close", (code) => {
+      if (code !== 0) {
+        const detail = Buffer.concat(errors).toString("utf8").trim().slice(-1200);
+        reject(new Error(detail || `ffmpeg-exit-${code}`));
+        return;
+      }
+      try {
+        resolve(fs.readFileSync(outputFile));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }).finally(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+}
+
+function startVideoJob(png, duration) {
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const job = { id, status: "running", progress: 0, video: null, error: "" };
+  videoJobs.set(id, job);
+  activeVideoJobs += 1;
+  makeStaticVideo(png, duration, (progress) => {
+    job.progress = Math.max(job.progress, Math.round(progress * 10) / 10);
+  }).then((video) => {
+    job.video = video;
+    job.progress = 100;
+    job.status = "ready";
+  }).catch((error) => {
+    job.error = error.message || String(error);
+    job.status = "failed";
+  }).finally(() => {
+    activeVideoJobs -= 1;
+    setTimeout(() => videoJobs.delete(id), 10 * 60 * 1000).unref();
+  });
+  return job;
+}
+
+function sendDownload(res, body, fileName, type) {
+  res.writeHead(200, {
+    "content-type": type,
+    "content-length": body.length,
+    "content-disposition": `attachment; filename="${fileName}"`,
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*"
+  });
+  res.end(body);
 }
 
 function gfMul(x, y) {
@@ -342,6 +462,60 @@ async function handler(req, res) {
     return;
   }
 
+  if (url.pathname === "/api/video" && req.method === "POST") {
+    const duration = Number(url.searchParams.get("duration"));
+    if (!Number.isFinite(duration) || duration < 0.1 || duration > 3600) {
+      return send(res, 400, "Video duration must be between 0.1 and 3600 seconds");
+    }
+    if (activeVideoJobs >= 1) return send(res, 429, "A video export is already running");
+    const png = await readBinaryBody(req);
+    if (png.length < 8 || png.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") {
+      return send(res, 400, "Expected a PNG image");
+    }
+    activeVideoJobs += 1;
+    try {
+      const video = await makeStaticVideo(png, duration);
+      return sendDownload(res, video, "chroma-static.mp4", "video/mp4");
+    } finally {
+      activeVideoJobs -= 1;
+    }
+  }
+
+  if (url.pathname === "/api/video/start" && req.method === "POST") {
+    const duration = Number(url.searchParams.get("duration"));
+    if (!Number.isFinite(duration) || duration < 0.1 || duration > 3600) {
+      return send(res, 400, "Video duration must be between 0.1 and 3600 seconds");
+    }
+    if (activeVideoJobs >= 1) return send(res, 429, "A video export is already running");
+    const png = await readBinaryBody(req);
+    if (png.length < 8 || png.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") {
+      return send(res, 400, "Expected a PNG image");
+    }
+    const job = startVideoJob(png, duration);
+    return send(res, 202, JSON.stringify({ id: job.id }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/video/status" && req.method === "GET") {
+    const id = String(url.searchParams.get("id") || "").slice(0, 80);
+    const job = videoJobs.get(id);
+    if (!job) return send(res, 404, "Video job not found");
+    return send(res, 200, JSON.stringify({
+      status: job.status,
+      progress: job.progress,
+      error: job.status === "failed" ? job.error : ""
+    }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/video/result" && req.method === "GET") {
+    const id = String(url.searchParams.get("id") || "").slice(0, 80);
+    const job = videoJobs.get(id);
+    if (!job) return send(res, 404, "Video job not found");
+    if (job.status === "running") return send(res, 409, "Video is still being generated");
+    if (job.status === "failed") return send(res, 500, job.error || "Video conversion failed");
+    videoJobs.delete(id);
+    return sendDownload(res, job.video, "chroma-static.mp4", "video/mp4");
+  }
+
   if (url.pathname === "/api/register" && req.method === "POST") {
     const body = JSON.parse(await readBody(req));
     const id = String(body.id || "").slice(0, 80);
@@ -470,7 +644,7 @@ async function handler(req, res) {
 
   const fileName = path.basename(url.pathname);
   if (!PAGES.has(fileName)) return send(res, 404, "Not found");
-  const filePath = path.join(ROOT, fileName);
+  const filePath = path.join(WEB_ROOT, fileName);
   const ext = path.extname(filePath);
   const type = ext === ".html" ? "text/html; charset=utf-8" : ext === ".js" ? "text/javascript; charset=utf-8" : "application/octet-stream";
   send(res, 200, fs.readFileSync(filePath), type);
