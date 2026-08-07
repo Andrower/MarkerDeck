@@ -137,6 +137,7 @@ jobs:
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
@@ -147,5 +148,6 @@ jobs:
               --title "Chroma Cross v$RELEASE_VERSION" \
               --generate-notes
           fi
-          find artifacts -type f \( -name "*.zip" -o -name "*.exe" \) -print0 \
-            | xargs -0 gh release upload "$RELEASE_TAG" --clobber
+          while IFS= read -r -d '' asset; do
+            gh release upload "$RELEASE_TAG" "$asset" --clobber
+          done < <(find artifacts -type f \( -name "*.zip" -o -name "*.exe" \) -print0)
