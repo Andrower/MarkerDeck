@@ -16,6 +16,7 @@
   "build": {
     "appId": "local.chroma.cross.client",
     "productName": "Chroma Cross Video Client",
+    "artifactName": "Chroma.Cross.Client.${version}.${ext}",
     "files": [
       "main.js",
       "preload.js"

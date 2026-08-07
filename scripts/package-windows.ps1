@@ -32,7 +32,12 @@ try {
   Copy-Item -Path $nodeSource -Destination (Join-Path $packageDirectory "runtime\node-windows\node.exe") -Force
 
   $ffmpegDestination = Join-Path $packageDirectory "runtime\ffmpeg-windows"
-  & (Join-Path $root "platform\windows\prepare-ffmpeg.ps1") -Destination $ffmpegDestination
+  $preparedFfmpeg = Join-Path $root "runtime\windows\ffmpeg-windows"
+  if (Test-Path (Join-Path $preparedFfmpeg "ffmpeg.exe")) {
+    Copy-Item -Path $preparedFfmpeg -Destination (Split-Path $ffmpegDestination) -Recurse -Force
+  } else {
+    & (Join-Path $root "platform\windows\prepare-ffmpeg.ps1") -Destination $ffmpegDestination
+  }
 
   if (Test-Path $archive) {
     Remove-Item -Path $archive -Force
