@@ -15,6 +15,9 @@ const DATA_ROOT = process.env.CHROMA_DATA_DIR
 const PRESETS_FILE = process.env.CHROMA_PRESETS_FILE
   ? path.resolve(process.env.CHROMA_PRESETS_FILE)
   : path.join(DATA_ROOT, "chroma-presets.json");
+const SETTINGS_FILE = path.join(DATA_ROOT, "chroma-settings.json");
+const DEVICE_OFFLINE_MS = 5000;
+const DEFAULT_DEVICE_RETENTION_MS = 10 * 60 * 1000;
 const PAGES = new Set([
   "chroma-cross-screen.html",
   "chroma-launch.html"
@@ -99,6 +102,32 @@ function savePresets() {
 
 let presets = loadPresets();
 
+function normalizeDeviceRetentionMs(value) {
+  const retentionMs = Math.round(Number(value));
+  if (retentionMs === 0) return 0;
+  if (!Number.isFinite(retentionMs)) return DEFAULT_DEVICE_RETENTION_MS;
+  return Math.min(7 * 24 * 60 * 60 * 1000, Math.max(30 * 1000, retentionMs));
+}
+
+function loadSettings() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8"));
+    return { deviceRetentionMs: normalizeDeviceRetentionMs(parsed.deviceRetentionMs) };
+  } catch (error) {
+    if (error.code !== "ENOENT") console.error(`Unable to load settings: ${error.message}`);
+    return { deviceRetentionMs: DEFAULT_DEVICE_RETENTION_MS };
+  }
+}
+
+function saveSettings() {
+  fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+  const temporaryFile = `${SETTINGS_FILE}.tmp`;
+  fs.writeFileSync(temporaryFile, JSON.stringify(settings, null, 2), "utf8");
+  fs.renameSync(temporaryFile, SETTINGS_FILE);
+}
+
+let settings = loadSettings();
+
 function cleanDevice(device) {
   return {
     id: device.id,
@@ -111,9 +140,20 @@ function cleanDevice(device) {
     userAgent: device.userAgent,
     lastSeen: device.lastSeen,
     order: device.order,
-    online: Date.now() - device.lastSeen < 5000,
+    online: Date.now() - device.lastSeen < DEVICE_OFFLINE_MS,
     state: device.state || state
   };
+}
+
+function removeExpiredDevices(now = Date.now()) {
+  if (!settings.deviceRetentionMs) return [];
+  const deletedIds = [];
+  devices.forEach((device, id) => {
+    if (now - device.lastSeen < settings.deviceRetentionMs) return;
+    devices.delete(id);
+    deletedIds.push(id);
+  });
+  return deletedIds;
 }
 
 function normalizeState(next) {
@@ -543,6 +583,7 @@ async function handler(req, res) {
   }
 
   if (url.pathname === "/api/devices") {
+    removeExpiredDevices();
     const list = Array.from(devices.values())
       .map(cleanDevice)
       .sort((a, b) => {
@@ -551,6 +592,43 @@ async function handler(req, res) {
         return a.order - b.order;
       });
     return send(res, 200, JSON.stringify({ devices: list }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/device-settings") {
+    if (req.method === "GET") {
+      return send(res, 200, JSON.stringify({
+        deviceRetentionMs: settings.deviceRetentionMs,
+        deviceOfflineMs: DEVICE_OFFLINE_MS
+      }), "application/json; charset=utf-8");
+    }
+    if (req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      settings.deviceRetentionMs = normalizeDeviceRetentionMs(body.deviceRetentionMs);
+      saveSettings();
+      const deletedIds = removeExpiredDevices();
+      return send(res, 200, JSON.stringify({
+        ok: true,
+        deviceRetentionMs: settings.deviceRetentionMs,
+        deletedIds
+      }), "application/json; charset=utf-8");
+    }
+  }
+
+  if (url.pathname === "/api/devices/delete" && req.method === "POST") {
+    const body = JSON.parse(await readBody(req));
+    const requestedIds = Array.isArray(body.ids)
+      ? body.ids.map((id) => String(id || "").slice(0, 80)).filter(Boolean).slice(0, 100)
+      : [];
+    const targetIds = body.allOffline ? Array.from(devices.keys()) : requestedIds;
+    const now = Date.now();
+    const deletedIds = [];
+    targetIds.forEach((id) => {
+      const device = devices.get(id);
+      if (!device || now - device.lastSeen < DEVICE_OFFLINE_MS) return;
+      devices.delete(id);
+      deletedIds.push(id);
+    });
+    return send(res, 200, JSON.stringify({ ok: true, deletedIds }), "application/json; charset=utf-8");
   }
 
   if (url.pathname === "/api/presets" && req.method === "GET") {
@@ -656,3 +734,6 @@ server = http.createServer((req, res) => {
   const url = `http://${getLanIp()}:${PORT}${LAUNCH_PAGE}`;
   console.log(`Chroma control server running: ${url}`);
 });
+
+const deviceCleanupTimer = setInterval(removeExpiredDevices, 30 * 1000);
+deviceCleanupTimer.unref?.();

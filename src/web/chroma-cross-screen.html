@@ -651,7 +651,8 @@
     }
 
     .device-batch-tools,
-    .device-group-tools {
+    .device-group-tools,
+    .device-retention-tools {
       display: grid;
       gap: 8px;
       align-items: center;
@@ -665,8 +666,19 @@
       grid-template-columns: minmax(0, 1fr) auto;
     }
 
+    .device-retention-tools {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .device-retention-tools label {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
     .device-group-tools input,
-    .device-group-tools select {
+    .device-group-tools select,
+    .device-retention-tools select {
       min-width: 0;
       width: 100%;
       min-height: 38px;
@@ -686,6 +698,8 @@
     .device-list {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-auto-rows: max-content;
+      align-content: start;
       gap: 10px;
       max-height: 390px;
       overflow: auto;
@@ -693,14 +707,25 @@
 
     .device-item {
       position: relative;
-      display: grid;
-      grid-template-rows: 112px auto auto;
-      gap: 6px;
       min-width: 0;
-      min-height: 0;
+      min-height: 192px;
       padding: 8px;
       text-align: center;
       background: rgba(255, 255, 255, 0.08);
+      border-radius: 7px;
+      overflow: hidden;
+    }
+
+    .device-card-main {
+      display: grid;
+      grid-template-rows: 112px 34px 18px;
+      gap: 6px;
+      width: 100%;
+      min-width: 0;
+      min-height: 0;
+      padding: 0;
+      background: transparent;
+      text-align: center;
     }
 
     .device-item.active {
@@ -739,6 +764,28 @@
       opacity: 0.62;
     }
 
+    .device-delete-button {
+      position: absolute;
+      top: 13px;
+      left: 13px;
+      z-index: 2;
+      display: none;
+      width: 26px;
+      height: 26px;
+      min-height: 0;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.64);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .device-item.offline .device-delete-button {
+      display: grid;
+      place-items: center;
+    }
+
     .device-thumbnail-frame {
       display: grid;
       place-items: center;
@@ -752,9 +799,8 @@
 
     .device-thumbnail {
       display: block;
+      width: 100%;
       height: 100%;
-      max-width: 100%;
-      aspect-ratio: var(--device-aspect, 9 / 16);
       background: #111;
     }
 
@@ -764,7 +810,11 @@
       font-size: 13px;
       font-weight: 700;
       line-height: 1.3;
+      overflow: hidden;
       overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
     }
 
     .device-card-status {
@@ -775,6 +825,15 @@
       color: rgba(255, 255, 255, 0.56);
       font-size: 11px;
       line-height: 1.25;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .device-card-status-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .online-dot {
@@ -817,8 +876,13 @@
       }
 
       .device-batch-tools,
-      .device-group-tools {
+      .device-group-tools,
+      .device-retention-tools {
         grid-template-columns: 1fr 1fr;
+      }
+
+      .device-retention-tools label {
+        grid-column: 1 / -1;
       }
 
       .selection-summary {
@@ -1140,6 +1204,18 @@
         <button id="clearSelectionBtn">取消选择</button>
         <span class="selection-summary" id="selectionSummary">已选择 0 台</span>
       </div>
+      <div class="device-retention-tools">
+        <label for="deviceRetentionSelect">离线设备保留</label>
+        <select id="deviceRetentionSelect">
+          <option value="60000">1 分钟</option>
+          <option value="300000">5 分钟</option>
+          <option value="600000">10 分钟</option>
+          <option value="1800000">30 分钟</option>
+          <option value="3600000">1 小时</option>
+          <option value="0">永不自动清理</option>
+        </select>
+        <button id="clearOfflineDevicesBtn">清理离线</button>
+      </div>
       <div class="device-group-tools">
         <select id="groupSelect" aria-label="设备分组">
           <option value="">选择分组</option>
@@ -1275,6 +1351,8 @@
     const selectOnlineBtn = document.getElementById("selectOnlineBtn");
     const clearSelectionBtn = document.getElementById("clearSelectionBtn");
     const selectionSummary = document.getElementById("selectionSummary");
+    const deviceRetentionSelect = document.getElementById("deviceRetentionSelect");
+    const clearOfflineDevicesBtn = document.getElementById("clearOfflineDevicesBtn");
     const groupSelect = document.getElementById("groupSelect");
     const selectGroupBtn = document.getElementById("selectGroupBtn");
     const groupNameInput = document.getElementById("groupNameInput");
@@ -1352,13 +1430,14 @@
     let selectedDeviceInfo = null;
     let selectedDeviceState = null;
     let devicePreviewCanvases = new Map();
+    let deviceCards = new Map();
+    let deviceRequestInFlight = false;
     let selectedDeviceNameId = "";
     let selectedDeviceNameDraft = "";
     let selectedDeviceNameLocked = false;
     let deviceForceLock = "0";
     let lastLockCommandId = "0";
     let lockedByRemote = false;
-    let deviceNameFocused = false;
     let cornerTapCount = 0;
     let cornerTimer = 0;
     const deviceId = getDeviceId();
@@ -2325,8 +2404,8 @@
       }
       if (role === "control") {
         updateStatus("控制端");
-        deviceNameFocused = false;
         updateRemoteLockButton();
+        loadDeviceSettings();
         loadDevices();
         deviceTimer = setInterval(loadDevices, 1000);
       }
@@ -2366,14 +2445,57 @@
     }
 
     async function loadDevices() {
-      if (!serverMode || role !== "control") return;
+      if (!serverMode || role !== "control" || deviceRequestInFlight) return;
+      deviceRequestInFlight = true;
       try {
         const response = await fetch("/api/devices", { cache: "no-store" });
+        if (!response.ok) throw new Error("devices");
         const data = await response.json();
         renderDevices(data.devices || []);
       } catch (_) {
-        deviceList.innerHTML = '<div class="readout">设备列表离线</div>';
+        updateStatus("设备列表离线");
+      } finally {
+        deviceRequestInFlight = false;
       }
+    }
+
+    async function loadDeviceSettings() {
+      if (!serverMode || role !== "control") return;
+      try {
+        const response = await fetch("/api/device-settings", { cache: "no-store" });
+        if (!response.ok) throw new Error("settings");
+        const data = await response.json();
+        const value = String(data.deviceRetentionMs ?? 600000);
+        if ([...deviceRetentionSelect.options].some((option) => option.value === value)) {
+          deviceRetentionSelect.value = value;
+        }
+      } catch (_) {
+        updateStatus("自动清理设置读取失败");
+      }
+    }
+
+    async function saveDeviceRetention() {
+      const response = await fetch("/api/device-settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deviceRetentionMs: Number(deviceRetentionSelect.value) })
+      });
+      if (!response.ok) throw new Error("settings");
+      const result = await response.json();
+      updateStatus(deviceRetentionSelect.value === "0" ? "离线设备将保留" : "自动清理时间已保存");
+      if (result.deletedIds?.length) await loadDevices();
+    }
+
+    async function deleteOfflineDevices(ids = [], allOffline = false) {
+      const response = await fetch("/api/devices/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids, allOffline })
+      });
+      if (!response.ok) throw new Error("delete-devices");
+      const result = await response.json();
+      updateStatus(result.deletedIds?.length ? `已删除 ${result.deletedIds.length} 台离线设备` : "没有可删除的离线设备");
+      await loadDevices();
     }
 
     function selectedTargets() {
@@ -2402,6 +2524,7 @@
       clearSelectionBtn.disabled = count === 0;
       assignGroupBtn.disabled = count === 0;
       clearGroupBtn.disabled = count === 0;
+      clearOfflineDevicesBtn.disabled = !lastDevices.some((device) => !device.online);
       updateRemoteLockButton();
     }
 
@@ -2513,8 +2636,73 @@
       await loadDevices();
     }
 
+    function createDeviceCard() {
+      const item = document.createElement("div");
+      const selectButton = document.createElement("button");
+      selectButton.type = "button";
+      selectButton.className = "device-card-main";
+      const mark = document.createElement("span");
+      mark.className = "device-select-mark";
+      mark.textContent = "✓";
+      mark.setAttribute("aria-hidden", "true");
+      const frame = document.createElement("span");
+      frame.className = "device-thumbnail-frame";
+      const thumbnail = document.createElement("canvas");
+      thumbnail.className = "device-thumbnail";
+      frame.append(thumbnail);
+      const name = document.createElement("span");
+      name.className = "device-card-name";
+      const status = document.createElement("span");
+      status.className = "device-card-status";
+      const dot = document.createElement("span");
+      const statusText = document.createElement("span");
+      statusText.className = "device-card-status-text";
+      status.append(dot, statusText);
+      selectButton.append(mark, frame, name, status);
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "device-delete-button";
+      deleteButton.textContent = "×";
+      item.append(selectButton, deleteButton);
+
+      const card = { item, selectButton, thumbnail, name, dot, statusText, deleteButton, device: null };
+      selectButton.addEventListener("click", () => {
+        if (card.device) toggleDeviceSelection(card.device);
+      });
+      deleteButton.addEventListener("click", async () => {
+        if (!card.device || card.device.online) return;
+        try {
+          await deleteOfflineDevices([card.device.id]);
+        } catch (_) {
+          updateStatus("删除离线设备失败");
+        }
+      });
+      return card;
+    }
+
+    function updateDeviceCard(card, device) {
+      card.device = device;
+      card.item.className = `device-item${device.id === selectedDeviceId ? " active" : ""}${selectedDeviceIds.has(device.id) ? " batch-selected" : ""}${device.online ? "" : " offline"}`;
+      const age = Math.max(0, Math.round((Date.now() - device.lastSeen) / 1000));
+      const deviceWidth = Math.max(1, Number(device.width) || 9);
+      const deviceHeight = Math.max(1, Number(device.height) || 16);
+      const deviceLabel = device.name || device.id;
+      card.selectButton.setAttribute("aria-label", `${deviceLabel}，${device.online ? "在线" : "已离线"}`);
+      card.thumbnail.setAttribute("aria-label", `${deviceLabel} 投放预览`);
+      card.name.textContent = deviceLabel;
+      card.name.title = deviceLabel;
+      card.dot.className = `online-dot${device.online ? "" : " offline"}`;
+      const groupText = device.group ? ` · ${device.group}` : "";
+      card.statusText.textContent = device.online ? `${deviceWidth} × ${deviceHeight}${groupText}` : `已离线 · ${age}s${groupText}`;
+      card.statusText.title = card.statusText.textContent;
+      card.deleteButton.title = `删除离线设备：${deviceLabel}`;
+      card.deleteButton.setAttribute("aria-label", `删除离线设备：${deviceLabel}`);
+      renderDeviceThumbnail(card.thumbnail, device.state || state(), deviceWidth, deviceHeight);
+    }
+
     function renderDevices(devices) {
       lastDevices = devices;
+      const previousScrollTop = deviceList.scrollTop;
       const validIds = new Set(devices.map((device) => device.id));
       selectedDeviceIds.forEach((id) => {
         if (!validIds.has(id)) selectedDeviceIds.delete(id);
@@ -2527,56 +2715,43 @@
       updateGroupOptions(devices);
       if (!devices.length) {
         selectionInitialized = false;
-        deviceList.innerHTML = '<div class="readout">暂无投放端在线</div>';
+        deviceCards.forEach((card) => card.item.remove());
+        deviceCards.clear();
+        devicePreviewCanvases.clear();
+        deviceList.textContent = "";
+        const empty = document.createElement("div");
+        empty.className = "readout device-list-empty";
+        empty.textContent = "暂无投放端在线";
+        deviceList.append(empty);
         selectedDeviceInfo = null;
         selectedDeviceState = null;
         deviceNameInput.value = "";
         deviceNameInput.disabled = true;
         saveDeviceNameBtn.disabled = true;
-        deviceNameFocused = false;
         currentDeviceLabel.textContent = "当前未选择设备";
-        devicePreviewCanvases = new Map();
         updateRemoteLockButton();
         renderPreview(state());
         updateSelectionUi();
         return;
       }
-      deviceList.innerHTML = "";
-      devicePreviewCanvases = new Map();
-      devices.forEach((device) => {
-        const button = document.createElement("button");
-        button.className = `device-item${device.id === selectedDeviceId ? " active" : ""}${selectedDeviceIds.has(device.id) ? " batch-selected" : ""}${device.online ? "" : " offline"}`;
-        const age = Math.max(0, Math.round((Date.now() - device.lastSeen) / 1000));
-        const frame = document.createElement("span");
-        frame.className = "device-thumbnail-frame";
-        const thumbnail = document.createElement("canvas");
-        thumbnail.className = "device-thumbnail";
-        thumbnail.setAttribute("aria-label", `${device.name || device.id} 投放预览`);
-        const deviceWidth = Math.max(1, Number(device.width) || 9);
-        const deviceHeight = Math.max(1, Number(device.height) || 16);
-        thumbnail.style.setProperty("--device-aspect", `${deviceWidth} / ${deviceHeight}`);
-        frame.append(thumbnail);
-        const name = document.createElement("span");
-        name.className = "device-card-name";
-        name.textContent = device.name || device.id;
-        const status = document.createElement("span");
-        status.className = "device-card-status";
-        const dot = document.createElement("span");
-        dot.className = `online-dot${device.online ? "" : " offline"}`;
-        const statusText = document.createElement("span");
-        const groupText = device.group ? ` · ${device.group}` : "";
-        statusText.textContent = device.online ? `${deviceWidth} × ${deviceHeight}${groupText}` : `已离线 · ${age}s${groupText}`;
-        status.append(dot, statusText);
-        const mark = document.createElement("span");
-        mark.className = "device-select-mark";
-        mark.textContent = "✓";
-        mark.setAttribute("aria-hidden", "true");
-        button.append(mark, frame, name, status);
-        button.addEventListener("click", () => toggleDeviceSelection(device));
-        deviceList.append(button);
-        devicePreviewCanvases.set(device.id, thumbnail);
-        renderDeviceThumbnail(thumbnail, device.state || state());
+      deviceList.querySelector(".device-list-empty")?.remove();
+      deviceCards.forEach((card, id) => {
+        if (validIds.has(id)) return;
+        card.item.remove();
+        deviceCards.delete(id);
+        devicePreviewCanvases.delete(id);
       });
+      devices.forEach((device) => {
+        let card = deviceCards.get(device.id);
+        if (!card) {
+          card = createDeviceCard();
+          deviceCards.set(device.id, card);
+          devicePreviewCanvases.set(device.id, card.thumbnail);
+        }
+        updateDeviceCard(card, device);
+        deviceList.append(card.item);
+      });
+      deviceList.scrollTop = Math.min(previousScrollTop, Math.max(0, deviceList.scrollHeight - deviceList.clientHeight));
       let selected = devices.find((device) => device.id === selectedDeviceId && selectedDeviceIds.has(device.id));
       if (!selected && selectedDeviceIds.size) {
         selected = devices.find((device) => selectedDeviceIds.has(device.id));
@@ -2603,13 +2778,6 @@
           deviceNameInput.value = selectedDeviceNameDraft;
         }
         renderPreview(selected.state);
-        if (role === "control" && !deviceNameFocused) {
-          deviceNameFocused = true;
-          setTimeout(() => {
-            deviceNameInput.focus();
-            deviceNameInput.select();
-          }, 0);
-        }
       }
       if (!selected) {
         selectedDeviceInfo = null;
@@ -2620,7 +2788,6 @@
         deviceNameInput.value = "";
         deviceNameInput.disabled = true;
         saveDeviceNameBtn.disabled = true;
-        deviceNameFocused = false;
         currentDeviceLabel.textContent = "当前未选择设备";
         updateRemoteLockButton();
         updateCrossToggleButton();
@@ -2651,22 +2818,32 @@
       randomPointsBtn.textContent = active ? "关闭随机点" : "开启随机点";
     }
 
-    function renderDeviceThumbnail(targetCanvas, s) {
+    function renderDeviceThumbnail(targetCanvas, s, sourceWidth, sourceHeight) {
       const rect = targetCanvas.getBoundingClientRect();
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       const w = Math.max(1, Math.round(rect.width));
       const h = Math.max(1, Math.round(rect.height));
+      const logicalWidth = Math.max(1, Math.round(Number(sourceWidth) || w));
+      const logicalHeight = Math.max(1, Math.round(Number(sourceHeight) || h));
       targetCanvas.width = Math.round(w * dpr);
       targetCanvas.height = Math.round(h * dpr);
       const targetContext = targetCanvas.getContext("2d", { alpha: false });
       targetContext.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawStateToContext(targetContext, w, h, s);
+      targetContext.fillStyle = "#080b09";
+      targetContext.fillRect(0, 0, w, h);
+      const scale = Math.min(w / logicalWidth, h / logicalHeight);
+      const offsetX = (w - logicalWidth * scale) / 2;
+      const offsetY = (h - logicalHeight * scale) / 2;
+      targetContext.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
+      drawStateToContext(targetContext, logicalWidth, logicalHeight, s);
     }
 
     function renderPreview(s) {
       if (role !== "control") return;
       const selectedCanvas = devicePreviewCanvases.get(selectedDeviceId);
-      if (selectedCanvas) renderDeviceThumbnail(selectedCanvas, s);
+      if (selectedCanvas) {
+        renderDeviceThumbnail(selectedCanvas, s, selectedDeviceInfo?.width, selectedDeviceInfo?.height);
+      }
     }
 
     async function loadServerInfo() {
@@ -2829,6 +3006,25 @@
     document.getElementById("displayModeBtn").addEventListener("click", () => startRole("display"));
     document.getElementById("controlModeBtn").addEventListener("click", () => startRole("control"));
     document.getElementById("refreshDevicesBtn").addEventListener("click", loadDevices);
+    deviceRetentionSelect.addEventListener("change", async () => {
+      try {
+        await saveDeviceRetention();
+      } catch (_) {
+        updateStatus("自动清理时间保存失败");
+      }
+    });
+    clearOfflineDevicesBtn.addEventListener("click", async () => {
+      if (!lastDevices.some((device) => !device.online)) {
+        updateStatus("没有离线设备");
+        return;
+      }
+      if (!window.confirm("删除当前全部离线设备？在线设备不会受影响。")) return;
+      try {
+        await deleteOfflineDevices([], true);
+      } catch (_) {
+        updateStatus("清理离线设备失败");
+      }
+    });
     selectOnlineBtn.addEventListener("click", () => selectDeviceSet(lastDevices.filter((device) => device.online)));
     clearSelectionBtn.addEventListener("click", () => {
       selectedDeviceIds.clear();
