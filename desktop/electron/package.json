@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "prepare:ffmpeg:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../platform/windows/prepare-ffmpeg.ps1",
-    "build:win": "pnpm run prepare:ffmpeg:win && electron-builder --win portable --x64"
+    "build:win": "pnpm run prepare:ffmpeg:win && electron-builder --win zip --x64"
   },
   "devDependencies": {
     "electron": "^31.7.7",
@@ -47,7 +47,7 @@
     ],
     "win": {
       "target": [
-        "portable"
+        "zip"
       ]
     }
   }

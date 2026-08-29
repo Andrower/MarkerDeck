@@ -11,7 +11,7 @@ const SERVER_FILE = path.join(ROOT, "chroma-control-server.js");
 const BUNDLED_NODE = path.join(ROOT, "node-windows", "node.exe");
 const LAUNCH_URL = `http://localhost:${PORT}/chroma-launch.html`;
 const DISPLAY_URL = `http://localhost:${PORT}/chroma-cross-screen.html?mode=display`;
-const UNLOCK_ACCELERATOR = "CommandOrControl+Alt+Shift+L";
+const LOCK_ACCELERATOR = "CommandOrControl+Alt+Shift+L";
 
 let mainWindow = null;
 let serverProcess = null;
@@ -87,11 +87,9 @@ function applyWindowLock() {
   }
 }
 
-function toggleProjectionLock() {
-  projectionLocked = !projectionLocked;
-  applyWindowLock();
+function emitProjectionLockHotkey() {
   if (mainWindow) {
-    mainWindow.webContents.send("desktop-lock-toggled", projectionLocked);
+    mainWindow.webContents.send("desktop-lock-hotkey");
   }
 }
 
@@ -144,7 +142,7 @@ app.whenReady().then(async () => {
   startServer();
   await waitForServer(LAUNCH_URL);
   await createWindow();
-  globalShortcut.register(UNLOCK_ACCELERATOR, toggleProjectionLock);
+  globalShortcut.register(LOCK_ACCELERATOR, emitProjectionLockHotkey);
 });
 
 ipcMain.on("projection-lock-changed", (_, locked) => {

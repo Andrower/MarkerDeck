@@ -9,6 +9,8 @@ Chroma Cross 是一套用于影视拍摄与后期跟踪的局域网投放工具�
 - 隐藏十字，切换为纯色画面
 - 添加间距受控且互不重叠的随机跟踪点
 - 控制端查看设备状态、重命名、分组、批量修改和清理离线设备
+- 同一物理设备的多个接收页面默认折叠显示，可整体或展开后独立控制
+- SSE 实时状态推送及逐接收页面的锁定命令确认
 - 保存和删除自定义预设
 - 锁定投放、快捷键解锁和停止本地服务
 - 按自定义分辨率导出 PNG
@@ -19,10 +21,9 @@ Chroma Cross 是一套用于影视拍摄与后期跟踪的局域网投放工具�
 
 | 版本 | 系统 | 说明 | 下载 |
 | --- | --- | --- | --- |
-| v1.1.0 稳定版 | Windows x64 | 免安装 EXE，内置 Node.js | [下载 Windows 版](https://github.com/Andrower/chroma-cross-platform/releases/download/v1.1.0/Chroma.Cross.Client.1.1.0.exe) |
-| v1.1.0 稳定版 | macOS Apple Silicon | 适用于 arm64 机型 | [下载 Mac 版](https://github.com/Andrower/chroma-cross-platform/releases/download/v1.1.0/chroma-cross-macos-arm64-v1.1.0.zip) |
-| v1.2.0-video 预发布版 | Windows x64 | 内置 Node.js 与 FFmpeg，可离线导出 MP4 | [下载 Windows 视频版](https://github.com/Andrower/chroma-cross-platform/releases/download/v1.2.0-video/chroma-cross-video-windows-x64-v1.2.0.zip) |
-| v1.2.0-video 预发布版 | macOS Apple Silicon | 内置 Node.js，MP4 导出需要系统 FFmpeg | [下载 Mac 视频版](https://github.com/Andrower/chroma-cross-platform/releases/download/v1.2.0-video/chroma-cross-video-macos-arm64-v1.2.0.zip) |
+| 最新版 | Windows x64 桌面客户端 | 解压一次后运行，内置 Node.js 与 FFmpeg | [下载 Windows 版](https://github.com/Andrower/chroma-cross-platform/releases/latest) |
+| 最新版 | Windows x64 浏览器服务端 | 解压后运行批处理文件，内置 Node.js 与 FFmpeg | [下载 Windows 服务端](https://github.com/Andrower/chroma-cross-platform/releases/latest) |
+| 最新版 | macOS Apple Silicon | 解压后运行，适用于 arm64 机型 | [下载 Mac 版](https://github.com/Andrower/chroma-cross-platform/releases/latest) |
 
 全部历史版本可在 [GitHub Releases](https://github.com/Andrower/chroma-cross-platform/releases) 中查看和回滚。
 
@@ -30,9 +31,11 @@ Chroma Cross 是一套用于影视拍摄与后期跟踪的局域网投放工具�
 
 ### Windows
 
-1. 稳定版直接双击 `Chroma.Cross.Client.1.1.0.exe`。
-2. ZIP 版本解压后双击 `start-chroma-server.bat`。
-3. 保持弹出的服务窗口运行。
+1. 下载 `Chroma.Cross.Client.<版本号>.zip` 并完整解压。
+2. 双击解压目录中的 `Chroma Cross Video Client.exe`。
+3. 不要把 EXE 单独移出目录；`ffmpeg.dll`、Node.js 和 FFmpeg 必须和程序目录一起保留。
+
+浏览器服务端包使用 `chroma-cross-windows-x64-v<版本号>.zip`，解压后双击 `start-chroma-server.bat`。
 
 ### macOS
 
@@ -71,7 +74,8 @@ http://localhost:8765/chroma-launch.html
 
 - Windows 键、`Ctrl + Alt + Delete`、电源键等系统级操作不能由普通网页完全禁用。
 - 需要严格封闭的拍摄设备应配合 Windows Assigned Access、组策略或系统级 kiosk 模式。
-- 默认解锁组合键为 `Ctrl + Alt + Shift + L`。
+- `Ctrl + Alt + Shift + L` 会在当前服务内广播锁定或解锁全部在线投放端；同一设备打开多个投放页面时也会分别收到。
+- 控制面板中的远程锁定按钮仍只作用于当前选中的设备或分组。
 
 ## 网络与隐私
 
@@ -84,9 +88,9 @@ http://localhost:8765/chroma-launch.html
 项目主要由原生 HTML/CSS/JavaScript、Node.js 本地服务和 Electron Windows 客户端组成。
 
 - 推荐 Node.js 24
-- Windows 客户端使用 Electron Builder 构建便携式 EXE
+- Windows 客户端使用 Electron Builder 构建完整目录 ZIP
 - MP4 导出由 FFmpeg 完成
-- 生成的 ZIP、EXE、Node.js 和 FFmpeg 运行时不提交到普通 Git 历史，而是放入 GitHub Releases
+- 生成的 ZIP、Node.js 和 FFmpeg 运行时不提交到普通 Git 历史，而是放入 GitHub Releases
 
 常用命令：
 
@@ -104,6 +108,7 @@ npm run package:mac
 - [Electron 桌面客户端](docs/desktop-client.md)
 - [视频导出](docs/video-export.md)
 - [版本与回滚](docs/rollback.md)
+- [改进路线](docs/improvement-roadmap.md)
 
 ## 许可
 
