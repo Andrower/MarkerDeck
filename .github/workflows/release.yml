@@ -112,16 +112,40 @@ jobs:
           $package.version = "${{ needs.prepare.outputs.version }}"
           $package | ConvertTo-Json -Depth 20 | Set-Content "package.json" -Encoding utf8
 
-      - name: Build portable EXE
+      - name: Build desktop client ZIP
         working-directory: desktop/electron
-        run: pnpm exec electron-builder --win portable --x64
+        run: pnpm exec electron-builder --win zip --x64
+
+      - name: Verify desktop client ZIP
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem "desktop/electron/dist/Chroma.Cross.Client.*.zip" | Select-Object -First 1
+          if (-not $archive) {
+            throw "Desktop client ZIP was not created."
+          }
+
+          $verifyRoot = Join-Path $env:RUNNER_TEMP "chroma-desktop-verify"
+          Expand-Archive -Path $archive.FullName -DestinationPath $verifyRoot -Force
+
+          $requiredFiles = @(
+            "Chroma Cross Video Client.exe",
+            "ffmpeg.dll",
+            "resources/server/node-windows/node.exe",
+            "resources/server/ffmpeg-windows/ffmpeg.exe"
+          )
+          foreach ($relativePath in $requiredFiles) {
+            $fullPath = Join-Path $verifyRoot $relativePath
+            if (-not (Test-Path $fullPath -PathType Leaf)) {
+              throw "Desktop client ZIP is missing: $relativePath"
+            }
+          }
 
       - uses: actions/upload-artifact@v4
         with:
           name: chroma-cross-windows-x64-${{ needs.prepare.outputs.version }}
           path: |
             artifacts/chroma-cross-windows-x64-v${{ needs.prepare.outputs.version }}.zip
-            desktop/electron/dist/*.exe
+            desktop/electron/dist/Chroma.Cross.Client.*.zip
           if-no-files-found: error
 
   release:
@@ -150,4 +174,4 @@ jobs:
           fi
           while IFS= read -r -d '' asset; do
             gh release upload "$RELEASE_TAG" "$asset" --clobber
-          done < <(find artifacts -type f \( -name "*.zip" -o -name "*.exe" \) -print0)
+          done < <(find artifacts -type f -name "*.zip" -print0)

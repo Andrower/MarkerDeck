@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld("chromaDesktop", {
   setDisplayMode(active) {
     ipcRenderer.send("display-mode-changed", !!active);
   },
-  onProjectionLockToggle(callback) {
-    ipcRenderer.on("desktop-lock-toggled", (_, locked) => callback(!!locked));
+  onProjectionLockHotkey(callback) {
+    ipcRenderer.on("desktop-lock-hotkey", () => callback());
   }
 });

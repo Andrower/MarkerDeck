@@ -10,7 +10,13 @@
 
 ## 桌面客户端
 
-Electron 桌面客户端支持全屏、置顶和更强的按键拦截。锁定期间会拦截常见的退出、刷新和导航快捷键，默认解锁组合键为 `Ctrl + Alt + Shift + L`。
+Electron 桌面客户端支持全屏、置顶和更强的按键拦截。锁定期间会拦截常见的退出、刷新和导航快捷键。`Ctrl + Alt + Shift + L` 会通过本地服务广播切换全部在线投放端的锁定状态，同一设备中的多个投放页面也能分别收到。
+
+1. 下载 `Chroma.Cross.Client.<版本号>.zip`。
+2. 将 ZIP 完整解压到普通文件夹。
+3. 双击 `Chroma Cross Video Client.exe`。
+
+桌面客户端目录内包含 Electron DLL、Node.js 和 FFmpeg。不要只复制主 EXE，否则 Windows 会提示缺少 `ffmpeg.dll` 等运行库。完整目录版只在首次使用时解压，后续启动不会重复释放运行时文件。
 
 Windows 键和 `Ctrl + Alt + Delete` 等系统级操作无法由普通应用完全屏蔽。严格封闭环境需要使用 Windows Assigned Access、组策略或系统级 kiosk 配置。
 

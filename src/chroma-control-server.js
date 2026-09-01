@@ -15,6 +15,9 @@ const DATA_ROOT = process.env.CHROMA_DATA_DIR
 const PRESETS_FILE = process.env.CHROMA_PRESETS_FILE
   ? path.resolve(process.env.CHROMA_PRESETS_FILE)
   : path.join(DATA_ROOT, "chroma-presets.json");
+const SETTINGS_FILE = path.join(DATA_ROOT, "chroma-settings.json");
+const DEVICE_OFFLINE_MS = 5000;
+const DEFAULT_DEVICE_RETENTION_MS = 10 * 60 * 1000;
 const PAGES = new Set([
   "chroma-cross-screen.html",
   "chroma-launch.html"
@@ -65,6 +68,12 @@ const defaultPresets = [
 let state = { ...defaultState };
 const devices = new Map();
 let nextDeviceOrder = 1;
+let lockBroadcast = { command: "none", commandId: "0" };
+let lockBroadcastSequence = 0;
+const lockCommands = new Map();
+const eventClients = new Set();
+let nextEventId = 1;
+let lastPresenceSignature = "";
 let activeVideoJobs = 0;
 const videoJobs = new Map();
 
@@ -76,6 +85,13 @@ function cleanPreset(preset, fallbackId) {
     id: rawId || `preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     name,
     state: normalizeState(preset?.state || {})
+  };
+}
+
+function currentLockBroadcast() {
+  return {
+    globalLockCommand: lockBroadcast.command,
+    globalLockCommandId: lockBroadcast.commandId
   };
 }
 
@@ -99,9 +115,37 @@ function savePresets() {
 
 let presets = loadPresets();
 
+function normalizeDeviceRetentionMs(value) {
+  const retentionMs = Math.round(Number(value));
+  if (retentionMs === 0) return 0;
+  if (!Number.isFinite(retentionMs)) return DEFAULT_DEVICE_RETENTION_MS;
+  return Math.min(7 * 24 * 60 * 60 * 1000, Math.max(30 * 1000, retentionMs));
+}
+
+function loadSettings() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8"));
+    return { deviceRetentionMs: normalizeDeviceRetentionMs(parsed.deviceRetentionMs) };
+  } catch (error) {
+    if (error.code !== "ENOENT") console.error(`Unable to load settings: ${error.message}`);
+    return { deviceRetentionMs: DEFAULT_DEVICE_RETENTION_MS };
+  }
+}
+
+function saveSettings() {
+  fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+  const temporaryFile = `${SETTINGS_FILE}.tmp`;
+  fs.writeFileSync(temporaryFile, JSON.stringify(settings, null, 2), "utf8");
+  fs.renameSync(temporaryFile, SETTINGS_FILE);
+}
+
+let settings = loadSettings();
+
 function cleanDevice(device) {
   return {
     id: device.id,
+    deviceId: device.deviceId || device.id,
+    sessionId: device.sessionId || device.id,
     name: device.name,
     group: device.group || "",
     role: device.role,
@@ -111,9 +155,105 @@ function cleanDevice(device) {
     userAgent: device.userAgent,
     lastSeen: device.lastSeen,
     order: device.order,
-    online: Date.now() - device.lastSeen < 5000,
+    online: Date.now() - device.lastSeen < DEVICE_OFFLINE_MS,
     state: device.state || state
   };
+}
+
+function removeExpiredDevices(now = Date.now()) {
+  if (!settings.deviceRetentionMs) return [];
+  const deletedIds = [];
+  devices.forEach((device, id) => {
+    if (now - device.lastSeen < settings.deviceRetentionMs) return;
+    devices.delete(id);
+    deletedIds.push(id);
+  });
+  return deletedIds;
+}
+
+function writeEvent(client, event, data) {
+  if (client.response.destroyed || client.response.writableEnded) return false;
+  try {
+    client.response.write(`id: ${nextEventId++}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    return true;
+  } catch (_) {
+    eventClients.delete(client);
+    return false;
+  }
+}
+
+function pushEvent(event, data, options = {}) {
+  const targetIds = options.sessionIds ? new Set(options.sessionIds) : null;
+  eventClients.forEach((client) => {
+    if (options.role && client.role !== options.role) return;
+    if (targetIds && !targetIds.has(client.sessionId)) return;
+    writeEvent(client, event, data);
+  });
+}
+
+function presenceSignature(now = Date.now()) {
+  return Array.from(devices.values())
+    .map((device) => `${device.id}:${now - device.lastSeen < DEVICE_OFFLINE_MS ? 1 : 0}`)
+    .sort()
+    .join("|");
+}
+
+function notifyDevicesIfChanged(force = false) {
+  const nextSignature = presenceSignature();
+  if (!force && nextSignature === lastPresenceSignature) return;
+  lastPresenceSignature = nextSignature;
+  pushEvent("devices", { changedAt: Date.now() }, { role: "control" });
+}
+
+function lockCommandStatus(command) {
+  const acknowledgements = Array.from(command.acknowledgements.values());
+  const confirmed = acknowledgements.filter((ack) => ack.ok && ack.locked === command.enabled).length;
+  return {
+    commandId: command.id,
+    enabled: command.enabled,
+    targetCount: command.targetIds.size,
+    acknowledgedCount: acknowledgements.length,
+    confirmedCount: confirmed,
+    failedCount: acknowledgements.length - confirmed,
+    pendingCount: Math.max(0, command.targetIds.size - acknowledgements.length),
+    complete: acknowledgements.length >= command.targetIds.size
+  };
+}
+
+function createLockCommand(ids, enabled, options = {}) {
+  const targetIds = new Set(ids.map((id) => String(id || "").slice(0, 80)).filter((id) => devices.has(id)));
+  const commandId = `${Date.now()}-${++lockBroadcastSequence}`;
+  const command = {
+    id: commandId,
+    enabled: !!enabled,
+    targetIds,
+    acknowledgements: new Map(),
+    createdAt: Date.now()
+  };
+  lockCommands.set(commandId, command);
+  if (options.persistToDevice !== false) {
+    targetIds.forEach((id) => {
+      const device = devices.get(id);
+      device.state = normalizeState({
+        ...(device.state || state),
+        forceLock: enabled ? "1" : "0",
+        lockCommand: enabled ? "lock" : "unlock",
+        lockCommandId: commandId
+      });
+    });
+  }
+  pushEvent("lock-command", { commandId, enabled: !!enabled }, {
+    role: "display",
+    sessionIds: targetIds
+  });
+  pushEvent("lock-ack", lockCommandStatus(command), { role: "control" });
+  notifyDevicesIfChanged(true);
+  setTimeout(() => {
+    const current = lockCommands.get(commandId);
+    if (current) pushEvent("lock-ack", lockCommandStatus(current), { role: "control" });
+  }, 5000).unref?.();
+  setTimeout(() => lockCommands.delete(commandId), 10 * 60 * 1000).unref?.();
+  return command;
 }
 
 function normalizeState(next) {
@@ -453,6 +593,25 @@ async function handler(req, res) {
     }), "application/json; charset=utf-8");
   }
 
+  if (url.pathname === "/api/events" && req.method === "GET") {
+    const role = url.searchParams.get("role") === "display" ? "display" : "control";
+    const sessionId = String(url.searchParams.get("sessionId") || "").slice(0, 80);
+    const pageInstanceId = String(url.searchParams.get("pageInstanceId") || "").slice(0, 80);
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-store",
+      "connection": "keep-alive",
+      "access-control-allow-origin": "*",
+      "x-accel-buffering": "no"
+    });
+    res.write("retry: 1000\n\n");
+    const client = { response: res, role, sessionId, pageInstanceId };
+    eventClients.add(client);
+    writeEvent(client, "connected", { role, sessionId });
+    req.on("close", () => eventClients.delete(client));
+    return;
+  }
+
   if (url.pathname === "/api/shutdown" && req.method === "POST") {
     send(res, 200, JSON.stringify({ ok: true }), "application/json; charset=utf-8");
     setTimeout(() => {
@@ -518,18 +677,46 @@ async function handler(req, res) {
 
   if (url.pathname === "/api/register" && req.method === "POST") {
     const body = JSON.parse(await readBody(req));
-    const id = String(body.id || "").slice(0, 80);
+    const legacyId = String(body.id || "").slice(0, 80);
+    let sessionId = String(body.sessionId || legacyId).slice(0, 80);
+    const pageInstanceId = String(body.pageInstanceId || "").slice(0, 80);
+    const hasActiveConflict = pageInstanceId && Array.from(eventClients).some((client) =>
+      client.role === "display" &&
+      client.sessionId === sessionId &&
+      client.pageInstanceId &&
+      client.pageInstanceId !== pageInstanceId
+    );
+    if (hasActiveConflict) {
+      sessionId = `${sessionId.slice(0, 58)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`.slice(0, 80);
+    }
+    const deviceId = String(body.deviceId || legacyId || sessionId).slice(0, 80);
+    const id = sessionId;
     if (!id) return send(res, 400, "Missing device id");
     const previous = devices.get(id);
+    const physicalPeer = Array.from(devices.values()).find((device) => device.deviceId === deviceId);
     const requestedName = String(body.name || "").trim().slice(0, 40);
     const registeredName = body.updateName && requestedName
       ? requestedName
-      : previous?.name || requestedName || `设备 ${id.slice(-4)}`;
+      : previous?.name || physicalPeer?.name || requestedName || `设备 ${deviceId.slice(-4)}`;
     const nextState = previous?.state || normalizeState(body.state || state);
+    const deviceListChanged = !previous ||
+      previous.name !== registeredName ||
+      previous.width !== Number(body.width || 0) ||
+      previous.height !== Number(body.height || 0) ||
+      previous.dpr !== Number(body.dpr || 1) ||
+      previous.role !== String(body.role || previous?.role || "display").slice(0, 20);
+    if (body.updateName && requestedName) {
+      devices.forEach((device) => {
+        if (device.deviceId === deviceId) device.name = requestedName;
+      });
+    }
     devices.set(id, {
       id,
+      deviceId,
+      sessionId,
+      pageInstanceId,
       name: registeredName,
-      group: previous?.group || "",
+      group: previous?.group || physicalPeer?.group || "",
       role: String(body.role || previous?.role || "display").slice(0, 20),
       width: Number(body.width || 0),
       height: Number(body.height || 0),
@@ -539,10 +726,18 @@ async function handler(req, res) {
       order: previous?.order || nextDeviceOrder++,
       state: nextState
     });
-    return send(res, 200, JSON.stringify({ ok: true, name: registeredName, state: nextState }), "application/json; charset=utf-8");
+    notifyDevicesIfChanged(deviceListChanged);
+    return send(res, 200, JSON.stringify({
+      ok: true,
+      sessionId,
+      name: registeredName,
+      state: nextState,
+      globalLockCommandId: lockBroadcast.commandId
+    }), "application/json; charset=utf-8");
   }
 
   if (url.pathname === "/api/devices") {
+    removeExpiredDevices();
     const list = Array.from(devices.values())
       .map(cleanDevice)
       .sort((a, b) => {
@@ -551,6 +746,107 @@ async function handler(req, res) {
         return a.order - b.order;
       });
     return send(res, 200, JSON.stringify({ devices: list }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/device-settings") {
+    if (req.method === "GET") {
+      return send(res, 200, JSON.stringify({
+        deviceRetentionMs: settings.deviceRetentionMs,
+        deviceOfflineMs: DEVICE_OFFLINE_MS
+      }), "application/json; charset=utf-8");
+    }
+    if (req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      settings.deviceRetentionMs = normalizeDeviceRetentionMs(body.deviceRetentionMs);
+      saveSettings();
+      const deletedIds = removeExpiredDevices();
+      return send(res, 200, JSON.stringify({
+        ok: true,
+        deviceRetentionMs: settings.deviceRetentionMs,
+        deletedIds
+      }), "application/json; charset=utf-8");
+    }
+  }
+
+  if (url.pathname === "/api/devices/delete" && req.method === "POST") {
+    const body = JSON.parse(await readBody(req));
+    const requestedIds = Array.isArray(body.ids)
+      ? body.ids.map((id) => String(id || "").slice(0, 80)).filter(Boolean).slice(0, 100)
+      : [];
+    const targetIds = body.allOffline ? Array.from(devices.keys()) : requestedIds;
+    const now = Date.now();
+    const deletedIds = [];
+    targetIds.forEach((id) => {
+      const device = devices.get(id);
+      if (!device || now - device.lastSeen < DEVICE_OFFLINE_MS) return;
+      devices.delete(id);
+      deletedIds.push(id);
+    });
+    if (deletedIds.length) notifyDevicesIfChanged(true);
+    return send(res, 200, JSON.stringify({ ok: true, deletedIds }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/lock-broadcast" && req.method === "POST") {
+    const body = JSON.parse(await readBody(req));
+    const enabled = !!body.enabled;
+    const targetIds = Array.from(devices.values())
+      .filter((device) => Date.now() - device.lastSeen < DEVICE_OFFLINE_MS && device.role === "display")
+      .map((device) => device.id);
+    const command = createLockCommand(targetIds, enabled, { persistToDevice: false });
+    lockBroadcast = {
+      command: enabled ? "lock" : "unlock",
+      commandId: command.id
+    };
+    return send(res, 200, JSON.stringify({
+      ok: true,
+      command: lockBroadcast.command,
+      ...lockCommandStatus(command)
+    }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/lock-command" && req.method === "POST") {
+    const body = JSON.parse(await readBody(req));
+    const ids = Array.isArray(body.ids) ? body.ids.slice(0, 200) : [];
+    if (!ids.length) return send(res, 400, "Missing target ids");
+    const command = createLockCommand(ids, !!body.enabled);
+    return send(res, 200, JSON.stringify({ ok: true, ...lockCommandStatus(command) }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/lock-ack" && req.method === "POST") {
+    const body = JSON.parse(await readBody(req));
+    const commandId = String(body.commandId || "").slice(0, 80);
+    const sessionId = String(body.sessionId || "").slice(0, 80);
+    const command = lockCommands.get(commandId);
+    if (!command || !command.targetIds.has(sessionId)) return send(res, 404, "Lock command not found");
+    const acknowledgement = {
+      sessionId,
+      ok: body.ok !== false,
+      locked: !!body.locked,
+      error: String(body.error || "").slice(0, 200),
+      receivedAt: Date.now()
+    };
+    command.acknowledgements.set(sessionId, acknowledgement);
+    const device = devices.get(sessionId);
+    if (device) {
+      device.lastSeen = Date.now();
+      device.state = normalizeState({
+        ...(device.state || state),
+        forceLock: command.enabled ? "1" : "0",
+        displayLocked: acknowledgement.locked ? "1" : "0",
+        lockCommand: "none",
+        lockCommandId: commandId
+      });
+    }
+    const status = lockCommandStatus(command);
+    pushEvent("lock-ack", status, { role: "control" });
+    notifyDevicesIfChanged(true);
+    return send(res, 200, JSON.stringify({ ok: true, ...status }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/lock-command/status" && req.method === "GET") {
+    const command = lockCommands.get(String(url.searchParams.get("id") || "").slice(0, 80));
+    if (!command) return send(res, 404, "Lock command not found");
+    return send(res, 200, JSON.stringify(lockCommandStatus(command)), "application/json; charset=utf-8");
   }
 
   if (url.pathname === "/api/presets" && req.method === "GET") {
@@ -588,9 +884,14 @@ async function handler(req, res) {
     if (!name) return send(res, 400, "Missing device name");
     const device = devices.get(id);
     if (!device) return send(res, 404, "Device not found");
-    device.name = name;
-    devices.set(id, device);
-    return send(res, 200, JSON.stringify({ ok: true, name }), "application/json; charset=utf-8");
+    let updated = 0;
+    devices.forEach((candidate) => {
+      if ((candidate.deviceId || candidate.id) !== (device.deviceId || device.id)) return;
+      candidate.name = name;
+      updated += 1;
+    });
+    notifyDevicesIfChanged(true);
+    return send(res, 200, JSON.stringify({ ok: true, name, updated }), "application/json; charset=utf-8");
   }
 
   if (url.pathname === "/api/device-group" && req.method === "POST") {
@@ -608,6 +909,7 @@ async function handler(req, res) {
       devices.set(id, device);
       updated += 1;
     });
+    notifyDevicesIfChanged(true);
     return send(res, 200, JSON.stringify({ ok: true, group, updated }), "application/json; charset=utf-8");
   }
 
@@ -615,9 +917,15 @@ async function handler(req, res) {
     const deviceId = url.searchParams.get("deviceId");
     if (req.method === "GET") {
       if (deviceId && devices.has(deviceId)) {
-        return send(res, 200, JSON.stringify(devices.get(deviceId).state || state), "application/json; charset=utf-8");
+        return send(res, 200, JSON.stringify({
+          ...(devices.get(deviceId).state || state),
+          ...currentLockBroadcast()
+        }), "application/json; charset=utf-8");
       }
-      return send(res, 200, JSON.stringify(state), "application/json; charset=utf-8");
+      return send(res, 200, JSON.stringify({
+        ...state,
+        ...currentLockBroadcast()
+      }), "application/json; charset=utf-8");
     }
     if (req.method === "POST") {
       const next = JSON.parse(await readBody(req));
@@ -626,8 +934,14 @@ async function handler(req, res) {
         const device = devices.get(deviceId);
         device.state = nextState;
         devices.set(deviceId, device);
+        pushEvent("state", { sessionId: deviceId, state: nextState }, {
+          role: "display",
+          sessionIds: [deviceId]
+        });
+        notifyDevicesIfChanged(true);
       } else {
         state = nextState;
+        pushEvent("state", { sessionId: "", state: nextState }, { role: "display" });
       }
       return send(res, 200, JSON.stringify({ ok: true }), "application/json; charset=utf-8");
     }
@@ -656,3 +970,16 @@ server = http.createServer((req, res) => {
   const url = `http://${getLanIp()}:${PORT}${LAUNCH_PAGE}`;
   console.log(`Chroma control server running: ${url}`);
 });
+
+const deviceCleanupTimer = setInterval(() => {
+  const deletedIds = removeExpiredDevices();
+  notifyDevicesIfChanged(deletedIds.length > 0);
+}, 1000);
+deviceCleanupTimer.unref?.();
+
+const eventHeartbeatTimer = setInterval(() => {
+  eventClients.forEach((client) => {
+    if (!client.response.destroyed && !client.response.writableEnded) client.response.write(": heartbeat\n\n");
+  });
+}, 15 * 1000);
+eventHeartbeatTimer.unref?.();
