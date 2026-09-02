@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Implemented MD-A02 ordinary Android display MVP with explicit DataStore settings, validated server-origin input, a safe WebView display shell, visible loading/error/retry states, immersive fullscreen, native screen-on behavior, and Android-provided device-name handoff.
 - Documented an Android-first mobile implementation plan split into acceptance-testable tasks, dependency gates, and release milestones.
 - Implemented MD-A01 Android foundation with a standalone Kotlin/Android SDK project, fixed AGP and Gradle versions, a pure service URL unit test, and a separate GitHub Actions debug-check job.
 

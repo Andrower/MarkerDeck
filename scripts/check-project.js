@@ -32,8 +32,14 @@ const androidRequiredFiles = [
   "android/app/src/main/AndroidManifest.xml",
   "android/app/src/main/kotlin/com/andrower/markerdeck/MainActivity.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/ServiceUrl.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/Settings.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/SettingsRepository.kt",
   "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
   "android/app/src/main/res/drawable/ic_launcher_monochrome.xml",
+  "android/app/src/main/res/drawable/markerdeck_input.xml",
+  "android/app/src/main/res/drawable/markerdeck_primary_button.xml",
+  "android/app/src/main/res/drawable/markerdeck_secondary_button.xml",
+  "android/app/src/main/res/drawable/markerdeck_status_panel.xml",
   "android/app/src/main/res/layout/activity_main.xml",
   "android/app/src/main/res/mipmap-anydpi/ic_launcher.xml",
   "android/app/src/main/res/values/colors.xml",
@@ -42,6 +48,7 @@ const androidRequiredFiles = [
   "android/app/src/main/res/xml/backup_rules.xml",
   "android/app/src/main/res/xml/data_extraction_rules.xml",
   "android/app/src/test/kotlin/com/andrower/markerdeck/ServiceUrlTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/SettingsTest.kt",
   "android/README.md",
   ".github/workflows/android-check.yml"
 ];
@@ -78,6 +85,11 @@ htmlFiles.forEach((relativePath) => {
     new vm.Script(match[1], { filename: `${relativePath}:inline-${index + 1}` });
   });
 });
+
+const displayPage = fs.readFileSync(path.join(root, "src/web/markerdeck-screen.html"), "utf8");
+assert.match(displayPage, /androidDeviceName/);
+assert.match(displayPage, /saveLocalDeviceName\(providedDeviceName\)/);
+assert.match(displayPage, /await requestDisplayName\(\)/);
 
 const launcherMode = fs.statSync(path.join(root, "platform/macos/start-markerdeck-server.command")).mode;
 assert.ok((launcherMode & 0o111) !== 0, "macOS launcher must be executable");

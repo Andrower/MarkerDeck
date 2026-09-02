@@ -1,0 +1,91 @@
+package com.andrower.markerdeck
+
+const val MAX_DEVICE_NAME_LENGTH = 40
+
+enum class DisplayMode(val storageValue: String, val label: String) {
+    ORDINARY_DISPLAY("display", "普通投放");
+
+    companion object {
+        fun fromStorage(value: String?): DisplayMode =
+            values().firstOrNull { it.storageValue == value } ?: ORDINARY_DISPLAY
+    }
+}
+
+data class MarkerDeckSettings(
+    val serviceAddress: String = "",
+    val deviceName: String = "",
+    val mode: DisplayMode = DisplayMode.ORDINARY_DISPLAY
+)
+
+enum class SettingsField {
+    SERVICE_ADDRESS,
+    DEVICE_NAME
+}
+
+data class SettingsDraft(
+    val serviceAddress: String = "",
+    val deviceName: String = "",
+    val mode: DisplayMode = DisplayMode.ORDINARY_DISPLAY,
+    val editedFields: Set<SettingsField> = emptySet(),
+    val hydrated: Boolean = false
+)
+
+fun updateSettingsDraft(
+    draft: SettingsDraft,
+    field: SettingsField,
+    value: String
+): SettingsDraft = when (field) {
+    SettingsField.SERVICE_ADDRESS -> draft.copy(
+        serviceAddress = value,
+        editedFields = draft.editedFields + field
+    )
+
+    SettingsField.DEVICE_NAME -> draft.copy(
+        deviceName = value,
+        editedFields = draft.editedFields + field
+    )
+}
+
+/**
+ * Applies the first persisted snapshot without replacing fields that are already a user draft.
+ */
+fun hydrateSettingsDraft(
+    draft: SettingsDraft,
+    saved: MarkerDeckSettings
+): SettingsDraft {
+    if (draft.hydrated) return draft
+    return draft.copy(
+        serviceAddress = if (SettingsField.SERVICE_ADDRESS in draft.editedFields) {
+            draft.serviceAddress
+        } else {
+            saved.serviceAddress
+        },
+        deviceName = if (SettingsField.DEVICE_NAME in draft.editedFields) {
+            draft.deviceName
+        } else {
+            saved.deviceName
+        },
+        mode = saved.mode,
+        hydrated = true
+    )
+}
+
+fun settingsDraftFromSaved(saved: MarkerDeckSettings): SettingsDraft = SettingsDraft(
+    serviceAddress = saved.serviceAddress,
+    deviceName = saved.deviceName,
+    mode = saved.mode,
+    hydrated = true
+)
+
+fun normalizeDeviceName(value: String): String =
+    value.trim().take(MAX_DEVICE_NAME_LENGTH)
+
+fun normalizeSettings(
+    serviceAddress: String,
+    deviceName: String,
+    mode: DisplayMode = DisplayMode.ORDINARY_DISPLAY
+): MarkerDeckSettings = MarkerDeckSettings(
+    serviceAddress = serviceAddress.trim(),
+    deviceName = normalizeDeviceName(deviceName),
+    mode = mode
+)

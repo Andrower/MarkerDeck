@@ -1965,6 +1965,11 @@
       });
     }
 
+    function androidProvidedDeviceName() {
+      const value = new URLSearchParams(window.location.search).get("androidDeviceName");
+      return value ? String(value).trim().slice(0, 40) : "";
+    }
+
     function state() {
       return {
         bgColor: controls.bgColor.value,
@@ -3126,7 +3131,12 @@
       if (role === "display") {
         updateStatus("投放端");
         await ensureUniqueSessionId();
-        await requestDisplayName();
+        const providedDeviceName = androidProvidedDeviceName();
+        if (providedDeviceName) {
+          saveLocalDeviceName(providedDeviceName);
+        } else {
+          await requestDisplayName();
+        }
         globalLockBaselineInitialized = false;
         await registerDevice({ updateName: true });
         connectEventStream();

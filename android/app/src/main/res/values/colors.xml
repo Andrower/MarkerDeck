@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="markerdeck_background">#111111</color>
+    <color name="markerdeck_background">#0B0F0C</color>
+    <color name="markerdeck_surface">#121A15</color>
+    <color name="markerdeck_surface_raised">#18231C</color>
+    <color name="markerdeck_border">#33483A</color>
     <color name="markerdeck_foreground">#F5F5F5</color>
+    <color name="markerdeck_muted">#A9B8AD</color>
+    <color name="markerdeck_accent">#56D364</color>
+    <color name="markerdeck_accent_pressed">#8AE99A</color>
+    <color name="markerdeck_error">#FF9898</color>
     <color name="markerdeck_icon_background">#00A85A</color>
 </resources>

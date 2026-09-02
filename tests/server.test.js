@@ -138,6 +138,12 @@ test("serves launch and control pages", async () => {
   const control = await fetch(`${origin}/markerdeck-screen.html?mode=control`);
   assert.equal(control.status, 200);
   assert.match(await control.text(), /设备管理/);
+
+  const display = await fetch(`${origin}/markerdeck-screen.html?mode=display&androidDeviceName=${encodeURIComponent("入口 & 屏")}`);
+  assert.equal(display.status, 200);
+  const displayHtml = await display.text();
+  assert.match(displayHtml, /androidProvidedDeviceName/);
+  assert.match(displayHtml, /saveLocalDeviceName\(providedDeviceName\)/);
 });
 
 test("redirects legacy page URLs while preserving mode query parameters", async () => {
