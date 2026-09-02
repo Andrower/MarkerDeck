@@ -1,4 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MarkerDeck</string>
+    <string name="ordinary_display">普通投放</string>
+    <string name="service_address_label">MarkerDeck 服务地址</string>
+    <string name="service_address_hint">http://192.168.1.20:8765</string>
+    <string name="service_address_helper">支持 http:// 或 https://；连接前不会访问网络</string>
+    <string name="device_name_label">设备名称</string>
+    <string name="device_name_hint">例如：门店入口屏</string>
+    <string name="device_name_helper">名称会传给投放页面并用于控制端识别</string>
+    <string name="mode_label">运行模式</string>
+    <string name="mode_unavailable_note">当前仅支持普通投放</string>
+    <string name="connect">连接并开始投放</string>
+    <string name="settings_not_connected_status">未连接。填写配置后点击连接。</string>
+    <string name="settings_restored_status">已恢复配置，尚未连接。</string>
+    <string name="saving_settings_status">正在保存配置&#8230;</string>
+    <string name="settings_save_failed">配置保存失败。</string>
+    <string name="invalid_address">服务地址无效。</string>
+    <string name="device_name_required">请输入设备名称。</string>
+    <string name="display_loading">正在加载投放页面&#8230;</string>
+    <string name="display_unexpected_navigation">投放页面尝试打开不受允许的地址。</string>
+    <string name="retry">重试</string>
+    <string name="back_to_settings">返回设置</string>
 </resources>
