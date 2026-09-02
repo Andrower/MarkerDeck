@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const dgram = require("node:dgram");
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
@@ -9,6 +10,7 @@ const { after, before, test } = require("node:test");
 const root = path.resolve(__dirname, "..");
 const port = 18000 + (process.pid % 10000);
 const origin = `http://127.0.0.1:${port}`;
+const discoveryPort = 20000 + (process.pid % 10000);
 const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "markerdeck-test-"));
 const legacyPresetsFile = path.join(dataDirectory, "chroma-presets.json");
 const legacySettingsFile = path.join(dataDirectory, "chroma-settings.json");
@@ -113,6 +115,7 @@ before(async () => {
     env: {
       ...process.env,
       PORT: String(port),
+      MARKERDECK_DISCOVERY_PORT: String(discoveryPort),
       MARKERDECK_DATA_DIR: dataDirectory
     },
     stdio: ["ignore", "pipe", "pipe"]
@@ -168,6 +171,49 @@ test("returns server information and QR code", async () => {
   assert.equal(qr.status, 200);
   assert.match(qr.headers.get("content-type"), /image\/svg\+xml/);
   assert.match(await qr.text(), /^<svg/);
+});
+
+test("answers nonce-scoped LAN discovery requests and verifies the HTTP endpoint", async () => {
+  const nonce = "test-discovery-nonce";
+  const response = await new Promise((resolve, reject) => {
+    const socket = dgram.createSocket("udp4");
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error("Timed out waiting for discovery response"));
+    }, 3000);
+    socket.on("message", (message) => {
+      clearTimeout(timeout);
+      socket.close();
+      resolve(JSON.parse(message.toString("utf8")));
+    });
+    socket.on("error", (error) => {
+      clearTimeout(timeout);
+      socket.close();
+      reject(error);
+    });
+    socket.bind(() => {
+      const request = Buffer.from(JSON.stringify({
+        service: "markerdeck",
+        protocolVersion: 1,
+        type: "discover",
+        nonce
+      }));
+      socket.send(request, discoveryPort, "127.0.0.1");
+    });
+  });
+  assert.equal(response.service, "markerdeck");
+  assert.equal(response.protocolVersion, 1);
+  assert.equal(response.type, "response");
+  assert.equal(response.nonce, nonce);
+  assert.equal(response.port, port);
+
+  const handshake = await jsonRequest(`/api/discovery?nonce=${nonce}`);
+  assert.equal(handshake.response.status, 200);
+  assert.equal(handshake.body.nonce, nonce);
+  assert.equal(handshake.body.httpUrl.startsWith("http://"), true);
+
+  const invalidHandshake = await fetch(`${origin}/api/discovery`);
+  assert.equal(invalidHandshake.status, 400);
 });
 
 test("loads legacy presets and settings during the MarkerDeck migration", async () => {

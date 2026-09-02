@@ -24,6 +24,22 @@ class ServiceUrlTest {
     }
 
     @Test
+    fun addsHttpToBareIpHostAndLocalhostInputs() {
+        assertEquals(
+            "http://192.168.1.2/markerdeck-screen.html?mode=display",
+            buildDisplayUrl("192.168.1.2")
+        )
+        assertEquals(
+            "http://192.168.1.2:8765/markerdeck-screen.html?mode=display",
+            buildDisplayUrl("192.168.1.2:8765")
+        )
+        assertEquals(
+            "http://localhost:8765/markerdeck-screen.html?mode=display",
+            buildDisplayUrl("localhost:8765")
+        )
+    }
+
+    @Test
     fun preservesIpv6OriginAndEncodesAndroidDeviceName() {
         assertEquals(
             "http://[2001:db8::1]:8765/markerdeck-screen.html?mode=display&androidDeviceName=Front%20%26%20Side%2F%E5%B1%8F",

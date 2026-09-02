@@ -20,6 +20,17 @@ fun shouldFinishBeforeShowingSettings(
     isKeyguardLocked: Boolean
 ): Boolean = projectionActive && isKeyguardLocked
 
+enum class BackNavigationDecision {
+    CONSUME,
+    FINISH
+}
+
+fun backNavigationDecision(projectionActive: Boolean): BackNavigationDecision =
+    if (projectionActive) BackNavigationDecision.CONSUME else BackNavigationDecision.FINISH
+
+/** Window flags and immersive mode are valid only for the active projection surface. */
+fun shouldApplyDisplayWindowState(projectionActive: Boolean): Boolean = projectionActive
+
 data class SavedProjection(
     val serviceAddress: String,
     val deviceName: String

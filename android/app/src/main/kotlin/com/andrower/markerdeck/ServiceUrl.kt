@@ -29,8 +29,13 @@ fun normalizeServiceAddress(serviceAddress: String): String {
     val input = serviceAddress.trim()
     require(input.isNotEmpty()) { "Service address must not be empty." }
 
+    val uriInput = when {
+        input.matches(Regex("^[A-Za-z][A-Za-z0-9+.-]*://.*")) -> input
+        input.contains("://") -> input
+        else -> "http://$input"
+    }
     val uri = try {
-        URI(input)
+        URI(uriInput)
     } catch (error: URISyntaxException) {
         throw IllegalArgumentException("Service address is not a valid URI.", error)
     }

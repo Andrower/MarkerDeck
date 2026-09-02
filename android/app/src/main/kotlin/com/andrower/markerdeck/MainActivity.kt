@@ -3,19 +3,23 @@ package com.andrower.markerdeck
 import android.app.Activity
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Color
+import android.net.Uri
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
+import android.text.TextUtils
 import android.text.TextWatcher
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -31,6 +35,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -53,8 +58,11 @@ class MainActivity : Activity() {
     private lateinit var displayScreen: View
     private lateinit var serviceAddressInput: EditText
     private lateinit var deviceNameInput: EditText
-    private lateinit var modeValue: TextView
+    private lateinit var discoveryStatus: TextView
+    private lateinit var discoveryHostsList: LinearLayout
+    private lateinit var refreshDiscoveryButton: Button
     private lateinit var settingsStatus: TextView
+    private lateinit var systemPermissionSettingsButton: Button
     private lateinit var connectButton: Button
     private lateinit var webView: WebView
     private lateinit var displayStatusPanel: View
@@ -67,6 +75,7 @@ class MainActivity : Activity() {
 
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var settingsRepository: SettingsRepository
+    private lateinit var discoveryScanner: MarkerDeckDiscoveryScanner
     private var displayActive = false
     private var displayLoadFailed = false
     private var webViewHasDisplayPage = false
@@ -87,12 +96,16 @@ class MainActivity : Activity() {
     private var transientCapabilityWarningHideCallback: Runnable? = null
     private var backCallback: android.window.OnBackInvokedCallback? = null
     private var settingsDraft = SettingsDraft()
+    private var settingsHydrated = false
+    private var activityStarted = false
+    private var discoveryUiState = DiscoveryUiState()
     private var applyingSettingsDraft = false
     private var displayOrigin: String? = null
     private var mainFrameUrl: String? = null
     private var webViewLayoutIndex = 0
     private var webViewLayoutParams: ViewGroup.LayoutParams? = null
     private var cleanupNavigationPending = false
+    private var settingsStatusOverride: String? = null
 
     private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -112,6 +125,40 @@ class MainActivity : Activity() {
         bindViews()
         configureWebView(webView)
         bindActions()
+        discoveryScanner = MarkerDeckDiscoveryScanner(
+            context = this,
+            scope = activityScope,
+            listener = object : MarkerDeckDiscoveryScanner.Listener {
+                override fun onScanStarted() {
+                    discoveryUiState = mergeDiscoveryUiState(
+                        current = discoveryUiState,
+                        status = DiscoveryScanStatus.SCANNING,
+                        replaceHosts = true
+                    )
+                    renderDiscoveryUi()
+                }
+
+                override fun onHostDiscovered(host: DiscoveryHost) {
+                    discoveryUiState = mergeDiscoveryUiState(
+                        current = discoveryUiState,
+                        status = DiscoveryScanStatus.FOUND,
+                        incoming = listOf(host)
+                    )
+                    renderDiscoveryUi()
+                }
+
+                override fun onScanFinished(status: DiscoveryScanStatus, message: String) {
+                    discoveryUiState = mergeDiscoveryUiState(
+                        current = discoveryUiState,
+                        status = status,
+                        message = message
+                    )
+                    renderDiscoveryUi()
+                    maybeAutoFillDiscoveredHost()
+                }
+            }
+        )
+        renderDiscoveryUi()
         registerBackHandler()
         val savedProjection = validateSavedProjection(
             projectionActive = savedInstanceState?.getBoolean(STATE_PROJECTION_ACTIVE, false) == true,
@@ -128,6 +175,7 @@ class MainActivity : Activity() {
                 )
             )
             if (!restored) {
+                showSettingsScreen()
                 showSettingsError(getString(R.string.display_renderer_recovery_failed_settings))
             }
         }
@@ -139,8 +187,11 @@ class MainActivity : Activity() {
         displayScreen = findViewById(R.id.displayScreen)
         serviceAddressInput = findViewById(R.id.serviceAddressInput)
         deviceNameInput = findViewById(R.id.deviceNameInput)
-        modeValue = findViewById(R.id.modeValue)
+        discoveryStatus = findViewById(R.id.discoveryStatus)
+        discoveryHostsList = findViewById(R.id.discoveryHostsList)
+        refreshDiscoveryButton = findViewById(R.id.refreshDiscoveryButton)
         settingsStatus = findViewById(R.id.settingsStatus)
+        systemPermissionSettingsButton = findViewById(R.id.systemPermissionSettingsButton)
         connectButton = findViewById(R.id.connectButton)
         webView = findViewById(R.id.displayWebView)
         displayStatusPanel = findViewById(R.id.displayStatusPanel)
@@ -398,6 +449,8 @@ class MainActivity : Activity() {
 
     private fun bindActions() {
         connectButton.setOnClickListener { connectFromSettings() }
+        systemPermissionSettingsButton.setOnClickListener { openSystemPermissionSettings() }
+        refreshDiscoveryButton.setOnClickListener { discoveryScanner.refresh() }
         retryButton.setOnClickListener { loadDisplayPage() }
         backToSettingsButton.setOnClickListener { showSettingsScreen() }
     }
@@ -406,13 +459,117 @@ class MainActivity : Activity() {
         activityScope.launch {
             val saved = settingsRepository.settings.first()
             settingsDraft = hydrateSettingsDraft(settingsDraft, saved)
+            settingsHydrated = true
             if (!displayActive) applySettingsDraftToViews()
-            modeValue.text = settingsDraft.mode.label
-            if (settingsDraft.editedFields.isEmpty() &&
+            maybeAutoFillDiscoveredHost()
+            if (settingsStatusOverride != null) {
+                settingsStatus.text = settingsStatusOverride
+                settingsStatus.setTextColor(getColor(R.color.markerdeck_error))
+                settingsStatusOverride = null
+            } else if (settingsDraft.editedFields.isEmpty() &&
                 (saved.serviceAddress.isNotEmpty() || saved.deviceName.isNotEmpty())
             ) {
                 settingsStatus.setText(R.string.settings_restored_status)
             }
+        }
+    }
+
+    private fun renderDiscoveryUi() {
+        if (!::discoveryStatus.isInitialized) return
+        discoveryStatus.text = when (discoveryUiState.status) {
+            DiscoveryScanStatus.IDLE -> getString(R.string.discovery_idle)
+            DiscoveryScanStatus.SCANNING -> getString(R.string.discovery_scanning)
+            DiscoveryScanStatus.FOUND -> getString(
+                R.string.discovery_found,
+                discoveryUiState.hosts.size
+            )
+            DiscoveryScanStatus.EMPTY -> getString(R.string.discovery_empty)
+            DiscoveryScanStatus.NO_NETWORK -> discoveryUiState.message.ifBlank {
+                getString(R.string.discovery_no_network)
+            }
+            DiscoveryScanStatus.UNAVAILABLE -> discoveryUiState.message.ifBlank {
+                getString(R.string.discovery_unavailable)
+            }
+        }
+        discoveryStatus.setTextColor(getColor(R.color.markerdeck_muted))
+        refreshDiscoveryButton.isEnabled = discoveryUiState.status != DiscoveryScanStatus.SCANNING
+        discoveryHostsList.removeAllViews()
+        discoveryUiState.hosts.forEachIndexed { index, host ->
+            val hostButton = Button(this).apply {
+                background = getDrawable(R.drawable.markerdeck_secondary_button)
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                isAllCaps = false
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+                minHeight = (48 * resources.displayMetrics.density).toInt()
+                val horizontalPadding = (14 * resources.displayMetrics.density).toInt()
+                setPadding(horizontalPadding, 0, horizontalPadding, 0)
+                setTextColor(getColor(R.color.markerdeck_foreground))
+                textSize = 13f
+                text = "${host.name}\n${host.serviceAddress}"
+                contentDescription = "${host.name} ${host.serviceAddress}"
+                setOnClickListener { selectDiscoveredHost(host) }
+            }
+            val layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            if (index > 0) {
+                layoutParams.topMargin = (8 * resources.displayMetrics.density).toInt()
+            }
+            discoveryHostsList.addView(hostButton, layoutParams)
+        }
+    }
+
+    private fun maybeAutoFillDiscoveredHost() {
+        if (!settingsHydrated || discoveryUiState.status != DiscoveryScanStatus.FOUND) return
+        if (discoveryUiState.hosts.size != 1) return
+        if (SettingsField.SERVICE_ADDRESS in settingsDraft.editedFields) return
+        if (serviceAddressInput.text.toString().trim().isNotEmpty()) return
+        val host = discoveryUiState.hosts.single()
+        val normalizedAddress = try {
+            normalizeServiceAddress(host.serviceAddress)
+        } catch (_: IllegalArgumentException) {
+            return
+        }
+        applyingSettingsDraft = true
+        try {
+            serviceAddressInput.setText(normalizedAddress)
+        } finally {
+            applyingSettingsDraft = false
+        }
+        // Automatic discovery is a suggestion, so a later keystroke remains the user's edit.
+        settingsDraft = settingsDraft.copy(serviceAddress = normalizedAddress)
+    }
+
+    private fun selectDiscoveredHost(host: DiscoveryHost) {
+        val normalizedAddress = try {
+            normalizeServiceAddress(host.serviceAddress)
+        } catch (error: IllegalArgumentException) {
+            showSettingsError(error.message ?: getString(R.string.invalid_address))
+            return
+        }
+        applyingSettingsDraft = true
+        try {
+            serviceAddressInput.setText(normalizedAddress)
+        } finally {
+            applyingSettingsDraft = false
+        }
+        settingsDraft = updateSettingsDraft(
+            settingsDraft,
+            SettingsField.SERVICE_ADDRESS,
+            normalizedAddress
+        )
+        settingsStatus.text = getString(R.string.discovery_selected, host.name)
+        settingsStatus.setTextColor(getColor(R.color.markerdeck_foreground))
+    }
+
+    private fun updateDiscoveryLifecycle() {
+        if (!::discoveryScanner.isInitialized) return
+        if (activityStarted && activityResumed && settingsScreen.visibility == View.VISIBLE) {
+            discoveryScanner.start()
+        } else {
+            discoveryScanner.stop()
         }
     }
 
@@ -452,8 +609,7 @@ class MainActivity : Activity() {
 
         val savedSettings = normalizeSettings(
             serviceAddress = normalizedAddress,
-            deviceName = normalizedName,
-            mode = settingsDraft.mode
+            deviceName = normalizedName
         )
         connectButton.isEnabled = false
         serviceAddressInput.isEnabled = false
@@ -482,11 +638,12 @@ class MainActivity : Activity() {
             serviceAddress = normalizedAddress,
             deviceName = normalizeDeviceName(settings.deviceName)
         )
-        if (!prepareWebViewForProjection()) return false
+        if (!prepareWebViewForProjection()) {
+            return false
+        }
 
         settingsDraft = settingsDraftFromSaved(normalizedSettings)
         applySettingsDraftToViews()
-        modeValue.text = settingsDraft.mode.label
         displayOrigin = normalizedAddress
         displayDeviceName = normalizedSettings.deviceName
         mainFrameUrl = null
@@ -501,6 +658,7 @@ class MainActivity : Activity() {
         settingsScreen.visibility = View.GONE
         displayScreen.visibility = View.VISIBLE
         displayScreen.bringToFront()
+        updateDiscoveryLifecycle()
         connectButton.isEnabled = true
         applyDisplayWindowState()
         loadDisplayPage(normalizedSettings)
@@ -600,8 +758,54 @@ class MainActivity : Activity() {
     }
 
     private fun showSettingsError(message: String) {
+        settingsStatusOverride = message
         settingsStatus.text = message
         settingsStatus.setTextColor(getColor(R.color.markerdeck_error))
+    }
+
+    private fun openSystemPermissionSettings() {
+        val appPackageName = applicationContext.packageName
+        val miuiEditorAvailable = isXiaomiFamilyDevice(Build.MANUFACTURER, Build.BRAND) &&
+            packageManager.resolveActivity(
+                buildPermissionSettingsIntent(miuiPermissionSettingsIntentSpec(appPackageName)),
+                0
+            ) != null
+        val selectedSpec = selectPermissionSettingsIntent(
+            manufacturer = Build.MANUFACTURER,
+            brand = Build.BRAND,
+            miuiEditorAvailable = miuiEditorAvailable,
+            packageName = appPackageName
+        )
+        val fallbackSpec = applicationDetailsIntentSpec(appPackageName)
+        if (tryStartPermissionSettings(selectedSpec)) return
+        if (selectedSpec.route != PermissionSettingsRoute.APPLICATION_DETAILS &&
+            tryStartPermissionSettings(fallbackSpec)
+        ) {
+            return
+        }
+        showSettingsError(getString(R.string.system_settings_unavailable))
+    }
+
+    private fun buildPermissionSettingsIntent(spec: PermissionSettingsIntentSpec): Intent =
+        Intent(spec.action).apply {
+            if (spec.componentPackage != null && spec.componentClass != null) {
+                setClassName(spec.componentPackage, spec.componentClass)
+            }
+            if (spec.dataUri != null) data = Uri.parse(spec.dataUri)
+            if (spec.packageExtraName != null) {
+                putExtra(spec.packageExtraName, spec.packageName)
+            }
+        }
+
+    private fun tryStartPermissionSettings(spec: PermissionSettingsIntentSpec): Boolean {
+        return try {
+            startActivity(buildPermissionSettingsIntent(spec))
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     private fun showSettingsScreen() {
@@ -640,8 +844,10 @@ class MainActivity : Activity() {
         serviceAddressInput.isEnabled = true
         deviceNameInput.isEnabled = true
         displayDiagnosticMessage.visibility = View.GONE
+        settingsStatusOverride = null
         settingsStatus.setText(R.string.settings_not_connected_status)
         settingsStatus.setTextColor(getColor(R.color.markerdeck_muted))
+        updateDiscoveryLifecycle()
     }
 
     private fun clearProjectionRuntimeStateForActivity() {
@@ -671,7 +877,8 @@ class MainActivity : Activity() {
     }
 
     private fun applyDisplayWindowState() {
-        if (!displayActive) return
+        // This gate keeps the settings surface out of the keyguard window path.
+        if (!shouldApplyDisplayWindowState(displayActive)) return
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -751,6 +958,8 @@ class MainActivity : Activity() {
 
     private fun restoreActiveDisplay(recoveryState: ProjectionDiagnosticState) {
         if (!displayActive) return
+        // Reapply state to the existing display Activity only; this never launches an Activity
+        // or dismisses authentication, and onResume will run the same path after screen-on.
         displayScreen.visibility = View.VISIBLE
         displayScreen.bringToFront()
         applyDisplayWindowState()
@@ -923,7 +1132,10 @@ class MainActivity : Activity() {
     }
 
     private fun handleBackPressed() {
-        if (displayActive) showSettingsScreen() else finish()
+        when (backNavigationDecision(displayActive)) {
+            BackNavigationDecision.CONSUME -> Unit
+            BackNavigationDecision.FINISH -> finish()
+        }
     }
 
     private fun enterImmersiveMode(window: Window) {
@@ -978,8 +1190,23 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         activityResumed = false
+        // Keep the active projection state through screen-off so the registered screen-on
+        // receiver and onResume can restore the same display surface.
         if (displayActive) pauseWebViewIfNeeded()
+        updateDiscoveryLifecycle()
         super.onPause()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        activityStarted = true
+        updateDiscoveryLifecycle()
+    }
+
+    override fun onStop() {
+        activityStarted = false
+        updateDiscoveryLifecycle()
+        super.onStop()
     }
 
     override fun onResume() {
@@ -988,6 +1215,7 @@ class MainActivity : Activity() {
         if (displayActive) {
             restoreActiveDisplay(ProjectionDiagnosticState.SCREEN_ON_RECOVERY)
         }
+        updateDiscoveryLifecycle()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -1005,6 +1233,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if (::discoveryScanner.isInitialized) discoveryScanner.stop()
         activityScope.cancel()
         mainHandler.removeCallbacksAndMessages(null)
         unregisterScreenStateReceiver()

@@ -21,10 +21,13 @@ val Context.markerdeckDataStore: DataStore<Preferences> by preferencesDataStore(
 private object SettingsKeys {
     val serviceAddress = stringPreferencesKey("service_address")
     val deviceName = stringPreferencesKey("device_name")
-    val mode = stringPreferencesKey("mode")
+    // Migration-only key from the removed mode setting.
+    val legacyMode = stringPreferencesKey("mode")
 }
 
 class SettingsRepository(private val dataStore: DataStore<Preferences>) {
+    // DataStore ignores unknown keys, so the old mode value is harmless on upgrade.
+    // It is intentionally neither read nor written by the single-mode settings model.
     val settings: Flow<MarkerDeckSettings> = dataStore.data
         .catch { error ->
             if (error is IOException) emit(emptyPreferences()) else throw error
@@ -32,8 +35,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         .map { preferences ->
             MarkerDeckSettings(
                 serviceAddress = preferences[SettingsKeys.serviceAddress].orEmpty(),
-                deviceName = normalizeDeviceName(preferences[SettingsKeys.deviceName].orEmpty()),
-                mode = DisplayMode.fromStorage(preferences[SettingsKeys.mode])
+                deviceName = normalizeDeviceName(preferences[SettingsKeys.deviceName].orEmpty())
             )
         }
 
@@ -41,7 +43,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { preferences ->
             preferences[SettingsKeys.serviceAddress] = value.serviceAddress
             preferences[SettingsKeys.deviceName] = normalizeDeviceName(value.deviceName)
-            preferences[SettingsKeys.mode] = value.mode.storageValue
+            preferences.remove(SettingsKeys.legacyMode)
         }
     }
 }

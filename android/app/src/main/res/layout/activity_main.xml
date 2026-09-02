@@ -77,6 +77,54 @@
                 android:textColor="@color/markerdeck_muted"
                 android:textSize="12sp" />
 
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/discoveryLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/discovery_label"
+                    android:textColor="@color/markerdeck_foreground"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/refreshDiscoveryButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/markerdeck_secondary_button"
+                    android:minHeight="40dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:text="@string/refresh_discovery"
+                    android:textAllCaps="false"
+                    android:textColor="@color/markerdeck_foreground"
+                    android:textSize="13sp"
+                    tools:ignore="ButtonStyle" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/discoveryStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/discovery_idle"
+                android:textColor="@color/markerdeck_muted"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:id="@+id/discoveryHostsList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="vertical" />
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -114,51 +162,33 @@
                 android:textSize="12sp" />
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="22dp"
-                android:text="@string/mode_label"
-                android:textColor="@color/markerdeck_foreground"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                android:text="@string/settings_security_note"
+                android:textColor="@color/markerdeck_muted"
+                android:textSize="12sp" />
 
-            <LinearLayout
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:background="@drawable/markerdeck_input"
-                android:gravity="center_vertical"
+                android:text="@string/lock_screen_permission_helper"
+                android:textColor="@color/markerdeck_muted"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/systemPermissionSettingsButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/markerdeck_secondary_button"
                 android:minHeight="52dp"
-                android:orientation="vertical"
-                android:paddingStart="14dp"
-                android:paddingTop="8dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="8dp">
-
-                <TextView
-                    android:id="@+id/modeValue"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/ordinary_display"
-                    android:textColor="@color/markerdeck_foreground"
-                    android:textSize="16sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="@string/mode_unavailable_note"
-                    android:textColor="@color/markerdeck_muted"
-                    android:textSize="12sp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="@string/settings_security_note"
-                    android:textColor="@color/markerdeck_muted"
-                    android:textSize="12sp" />
-            </LinearLayout>
+                android:text="@string/open_lock_screen_settings"
+                android:textAllCaps="false"
+                android:textColor="@color/markerdeck_foreground"
+                android:textSize="14sp"
+                tools:ignore="ButtonStyle" />
 
             <Button
                 android:id="@+id/connectButton"
@@ -295,5 +325,6 @@
                 android:textSize="13sp"
                 android:visibility="gone" />
         </LinearLayout>
+
     </FrameLayout>
 </FrameLayout>

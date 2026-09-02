@@ -81,6 +81,22 @@ class LifecycleRecoveryTest {
     }
 
     @Test
+    fun consumesBackDuringActiveProjection() {
+        assertEquals(BackNavigationDecision.CONSUME, backNavigationDecision(true))
+    }
+
+    @Test
+    fun finishesFromInactiveSettingsSurface() {
+        assertEquals(BackNavigationDecision.FINISH, backNavigationDecision(false))
+    }
+
+    @Test
+    fun appliesWindowStateOnlyToAnActiveProjection() {
+        assertTrue(shouldApplyDisplayWindowState(true))
+        assertFalse(shouldApplyDisplayWindowState(false))
+    }
+
+    @Test
     fun validatesAndNormalizesOnlyExplicitSavedProjection() {
         assertEquals(
             SavedProjection("https://markerdeck.local:443", "Entrance Screen"),

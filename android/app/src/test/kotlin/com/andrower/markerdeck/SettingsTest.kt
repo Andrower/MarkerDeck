@@ -7,7 +7,7 @@ import org.junit.Test
 
 class SettingsTest {
     @Test
-    fun normalizesSettingsFieldsAndKeepsOrdinaryModeExplicit() {
+    fun normalizesSettingsFields() {
         val settings = normalizeSettings(
             serviceAddress = "  http://192.168.1.20:8765/  ",
             deviceName = "  Entrance Screen  "
@@ -15,7 +15,6 @@ class SettingsTest {
 
         assertEquals("http://192.168.1.20:8765/", settings.serviceAddress)
         assertEquals("Entrance Screen", settings.deviceName)
-        assertEquals(DisplayMode.ORDINARY_DISPLAY, settings.mode)
     }
 
     @Test
@@ -27,12 +26,6 @@ class SettingsTest {
     }
 
     @Test
-    fun unknownStoredModeFallsBackToOrdinaryDisplay() {
-        assertEquals(DisplayMode.ORDINARY_DISPLAY, DisplayMode.fromStorage("kiosk"))
-        assertEquals(DisplayMode.ORDINARY_DISPLAY, DisplayMode.fromStorage(null))
-    }
-
-    @Test
     fun delayedHydrationRestoresOnlyFieldsThatWereNotEdited() {
         val draft = updateSettingsDraft(
             updateSettingsDraft(SettingsDraft(), SettingsField.SERVICE_ADDRESS, "http://edited.local"),
@@ -41,15 +34,13 @@ class SettingsTest {
         )
         val saved = MarkerDeckSettings(
             serviceAddress = "http://saved.local",
-            deviceName = "Saved screen",
-            mode = DisplayMode.ORDINARY_DISPLAY
+            deviceName = "Saved screen"
         )
 
         val hydrated = hydrateSettingsDraft(draft, saved)
 
         assertEquals("http://edited.local", hydrated.serviceAddress)
         assertEquals("Edited screen", hydrated.deviceName)
-        assertEquals(DisplayMode.ORDINARY_DISPLAY, hydrated.mode)
         assertTrue(hydrated.hydrated)
     }
 
@@ -58,13 +49,11 @@ class SettingsTest {
         val draft = updateSettingsDraft(SettingsDraft(), SettingsField.SERVICE_ADDRESS, "http://edited.local")
         val firstSaved = MarkerDeckSettings(
             serviceAddress = "http://saved.local",
-            deviceName = "Saved screen",
-            mode = DisplayMode.ORDINARY_DISPLAY
+            deviceName = "Saved screen"
         )
         val secondSaved = MarkerDeckSettings(
             serviceAddress = "http://newer.local",
-            deviceName = "Newer screen",
-            mode = DisplayMode.ORDINARY_DISPLAY
+            deviceName = "Newer screen"
         )
 
         val hydrated = hydrateSettingsDraft(draft, firstSaved)
@@ -72,23 +61,20 @@ class SettingsTest {
 
         assertEquals("http://edited.local", unchanged.serviceAddress)
         assertEquals("Saved screen", unchanged.deviceName)
-        assertEquals(firstSaved.mode, unchanged.mode)
         assertFalse(SettingsField.DEVICE_NAME in unchanged.editedFields)
     }
 
     @Test
-    fun draftFromSavedKeepsModeAndValuesTogether() {
+    fun draftFromSavedKeepsValuesTogether() {
         val saved = MarkerDeckSettings(
             serviceAddress = "http://saved.local",
-            deviceName = "Saved screen",
-            mode = DisplayMode.ORDINARY_DISPLAY
+            deviceName = "Saved screen"
         )
 
         val draft = settingsDraftFromSaved(saved)
 
         assertEquals(saved.serviceAddress, draft.serviceAddress)
         assertEquals(saved.deviceName, draft.deviceName)
-        assertEquals(saved.mode, draft.mode)
         assertTrue(draft.hydrated)
     }
 }
