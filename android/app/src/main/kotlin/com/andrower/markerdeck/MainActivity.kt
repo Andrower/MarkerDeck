@@ -26,6 +26,7 @@ import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
@@ -52,6 +53,10 @@ class MainActivity : Activity() {
         private const val STATE_PROJECTION_ACTIVE = "projection_active"
         private const val STATE_SERVICE_ADDRESS = "projection_service_address"
         private const val STATE_DEVICE_NAME = "projection_device_name"
+        private const val EMERGENCY_CONTROLS_TIMEOUT_MS = 8_000L
+        private const val ANDROID_PROJECTION_BRIDGE_NAME = "markerdeckAndroid"
+        private const val SAFE_RELOCK_SCRIPT =
+            "window.markerdeckRelockProjection && window.markerdeckRelockProjection();"
     }
 
     private lateinit var settingsScreen: View
@@ -72,6 +77,7 @@ class MainActivity : Activity() {
     private lateinit var displayProgress: ProgressBar
     private lateinit var retryButton: Button
     private lateinit var backToSettingsButton: Button
+    private lateinit var emergencyExitButton: Button
 
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var settingsRepository: SettingsRepository
@@ -91,6 +97,8 @@ class MainActivity : Activity() {
     private var webViewLifecycleResumed = false
     private var displayWebViewUsable = true
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var emergencyControlsState = ProjectionEmergencyControlsState()
+    private var emergencyControlsTimeoutCallback: Runnable? = null
     private var transientCapabilityWarningVisible = false
     private var transientCapabilityWarningToken = 0
     private var transientCapabilityWarningHideCallback: Runnable? = null
@@ -201,6 +209,7 @@ class MainActivity : Activity() {
         displayProgress = findViewById(R.id.displayProgress)
         retryButton = findViewById(R.id.retryButton)
         backToSettingsButton = findViewById(R.id.backToSettingsButton)
+        emergencyExitButton = findViewById(R.id.emergencyExitButton)
         webViewLayoutIndex = (webView.parent as? ViewGroup)?.indexOfChild(webView) ?: 0
         webViewLayoutParams = webView.layoutParams
         serviceAddressInput.addTextChangedListener(object : TextWatcher {
@@ -249,6 +258,7 @@ class MainActivity : Activity() {
             displayZoomControls = false
             setSupportZoom(false)
         }
+        target.addJavascriptInterface(ProjectionJavascriptBridge(target), ANDROID_PROJECTION_BRIDGE_NAME)
         target.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                 if (!isCurrentWebView(view)) return
@@ -453,6 +463,96 @@ class MainActivity : Activity() {
         refreshDiscoveryButton.setOnClickListener { discoveryScanner.refresh() }
         retryButton.setOnClickListener { loadDisplayPage() }
         backToSettingsButton.setOnClickListener { showSettingsScreen() }
+        emergencyExitButton.setOnClickListener { showSettingsScreen() }
+    }
+
+    private inner class ProjectionJavascriptBridge(
+        private val sourceWebView: WebView
+    ) {
+        @JavascriptInterface
+        fun showEmergencyControls() {
+            dispatchEmergencyControlEvent(
+                sourceWebView,
+                ProjectionEmergencyControlEvent.SHOW_REQUESTED
+            )
+        }
+
+        @JavascriptInterface
+        fun hideEmergencyControls() {
+            dispatchEmergencyControlEvent(
+                sourceWebView,
+                ProjectionEmergencyControlEvent.HIDE_REQUESTED
+            )
+        }
+    }
+
+    private fun dispatchEmergencyControlEvent(
+        sourceWebView: WebView,
+        event: ProjectionEmergencyControlEvent
+    ) {
+        val apply = {
+            if (isCurrentWebView(sourceWebView)) {
+                applyEmergencyControlEvent(event)
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            apply()
+        } else {
+            runOnUiThread(apply)
+        }
+    }
+
+    private fun applyEmergencyControlEvent(event: ProjectionEmergencyControlEvent) {
+        val effectiveEvent = if (
+            event == ProjectionEmergencyControlEvent.SHOW_REQUESTED &&
+            displayStatusPanel.visibility == View.VISIBLE
+        ) {
+            ProjectionEmergencyControlEvent.HIDE_REQUESTED
+        } else {
+            event
+        }
+        val decision = reduceProjectionEmergencyControls(
+            current = emergencyControlsState,
+            event = effectiveEvent,
+            projectionActive = displayActive
+        )
+        emergencyControlsState = decision.state
+        emergencyExitButton.visibility = if (decision.state.visible) View.VISIBLE else View.GONE
+        if (decision.state.visible) {
+            scheduleEmergencyControlsTimeout()
+        } else {
+            cancelEmergencyControlsTimeout()
+        }
+        if (decision.shouldRelockProjection && displayWebViewUsable) {
+            try {
+                webView.evaluateJavascript(SAFE_RELOCK_SCRIPT, null)
+            } catch (_: RuntimeException) {
+                // The renderer may be tearing down; hiding the native control is still safe.
+            }
+        }
+    }
+
+    private fun scheduleEmergencyControlsTimeout() {
+        cancelEmergencyControlsTimeout()
+        val timeoutCallback = object : Runnable {
+            override fun run() {
+                if (emergencyControlsTimeoutCallback !== this) return
+                emergencyControlsTimeoutCallback = null
+                applyEmergencyControlEvent(ProjectionEmergencyControlEvent.TIMEOUT)
+            }
+        }
+        emergencyControlsTimeoutCallback = timeoutCallback
+        mainHandler.postDelayed(timeoutCallback, EMERGENCY_CONTROLS_TIMEOUT_MS)
+    }
+
+    private fun cancelEmergencyControlsTimeout() {
+        emergencyControlsTimeoutCallback?.let(mainHandler::removeCallbacks)
+        emergencyControlsTimeoutCallback = null
+    }
+
+    private fun clearEmergencyControls() {
+        if (!::emergencyExitButton.isInitialized) return
+        applyEmergencyControlEvent(ProjectionEmergencyControlEvent.PROJECTION_STOPPED)
     }
 
     private fun observeSettings() {
@@ -642,6 +742,8 @@ class MainActivity : Activity() {
             return false
         }
 
+        clearEmergencyControls()
+
         settingsDraft = settingsDraftFromSaved(normalizedSettings)
         applySettingsDraftToViews()
         displayOrigin = normalizedAddress
@@ -721,6 +823,7 @@ class MainActivity : Activity() {
     }
 
     private fun showDisplayLoading() {
+        clearEmergencyControls()
         displayStatusPanel.visibility = View.VISIBLE
         displayProgress.visibility = View.VISIBLE
         displayStatusMessage.text = when (displayDiagnosticState) {
@@ -744,6 +847,7 @@ class MainActivity : Activity() {
         diagnosticState: ProjectionDiagnosticState = ProjectionDiagnosticState.DEGRADED_RECOVERY_FAILURE,
         allowRetry: Boolean = true
     ) {
+        clearEmergencyControls()
         displayLoadFailed = true
         displayLoadInFlight = false
         displayPageHealthy = false
@@ -809,6 +913,7 @@ class MainActivity : Activity() {
     }
 
     private fun showSettingsScreen() {
+        clearEmergencyControls()
         val shouldClearWebView = webViewHasDisplayPage
         val keyguardManager = getSystemService(KEYGUARD_SERVICE) as? KeyguardManager
         val shouldFinish = shouldFinishBeforeShowingSettings(
@@ -1242,6 +1347,7 @@ class MainActivity : Activity() {
         }
         pauseWebViewIfNeeded()
         activityResumed = false
+        clearEmergencyControls()
         clearDisplayWindowState()
         displayActive = false
         if (displayWebViewUsable) {

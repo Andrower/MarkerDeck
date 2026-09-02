@@ -31,6 +31,7 @@ const androidRequiredFiles = [
   "android/app/build.gradle.kts",
   "android/app/src/main/AndroidManifest.xml",
   "android/app/src/main/kotlin/com/andrower/markerdeck/MainActivity.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/ProjectionEmergencyControls.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/DiscoveryProtocol.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/DiscoveryScanner.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/LifecycleRecovery.kt",
@@ -56,6 +57,7 @@ const androidRequiredFiles = [
   "android/app/src/test/kotlin/com/andrower/markerdeck/LifecycleRecoveryTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/PermissionSettingsTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/SettingsTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/ProjectionEmergencyControlsTest.kt",
   "android/README.md",
   ".github/workflows/android-check.yml"
 ];

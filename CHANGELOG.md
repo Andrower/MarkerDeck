@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added Android projection emergency exit: the existing local three-tap unlock path can reveal a temporary native “退出投放” button, whose 8-second native timeout relocks the page through a one-way JavaScript hook. The button returns to Android settings without calling `/api/shutdown`; remote unlock, shortcuts, WebView errors, and renderer recovery keep their existing behavior.
 - Added MD-A08 LAN host discovery for Android settings: a versioned UDP broadcast/multicast response on port 8766, nonce- and candidate-correlated HTTP handshake validation, multi-host selection, lifecycle-bounded scanning, and `http://` normalization for bare LAN addresses. The authorized Xiaomi/HyperOS target is now online for read-only diagnostics, but it was not in an active MarkerDeck projection, so the physical lock-screen comparison remains pending.
 - Cancelled MD-A04 dedicated-device work and removed its policy code, manifest/resource declarations, UI, tests, and setup guidance because Device Owner administration and possible factory-reset/data-clear recovery carry too much operational risk for MarkerDeck. Legacy mode preferences are ignored and all Android connections now use ordinary display.
 - Implemented the MD-A03 P0 screen-on priority slice: active ordinary projections restore visible WebView/window state through resume, focus, screen-on and user-present lifecycle events, with explicit keyguard diagnostics, saved active projection recovery, and renderer-failure recovery without authentication bypass claims.

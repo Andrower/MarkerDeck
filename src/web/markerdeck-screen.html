@@ -2855,6 +2855,15 @@
       }
     }
 
+    function notifyAndroidEmergencyControls(visible) {
+      const bridge = window.markerdeckAndroid;
+      if (!bridge) return;
+      try {
+        if (visible) bridge.showEmergencyControls?.();
+        else bridge.hideEmergencyControls?.();
+      } catch (_) {}
+    }
+
     function pushExitGuard() {
       try {
         history.pushState({ projectionLocked: true }, "");
@@ -2864,6 +2873,7 @@
     async function lockProjection(options = {}) {
       lockedByRemote = !!options.remote;
       locked = true;
+      notifyAndroidEmergencyControls(false);
       document.activeElement?.blur?.();
       window.chromaDesktop?.setProjectionLocked?.(true);
       document.body.classList.add("locked");
@@ -2881,10 +2891,12 @@
       if (role === "display") await publishState();
     }
 
-    async function unlockProjection() {
+    async function unlockProjection(options = {}) {
+      const localEmergency = options.localEmergency === true;
       lockedByRemote = false;
       locked = false;
       deviceForceLock = "0";
+      notifyAndroidEmergencyControls(false);
       window.chromaDesktop?.setProjectionLocked?.(false);
       document.body.classList.remove("locked");
       lockBtn.textContent = "锁定投放";
@@ -2900,8 +2912,13 @@
         wakeLock = null;
       }
       render();
+      if (localEmergency && !locked) notifyAndroidEmergencyControls(true);
       if (role === "display") await publishState();
     }
+
+    window.markerdeckRelockProjection = () => {
+      if (!locked) lockProjection().catch(() => {});
+    };
 
     function isLockHotkey(event) {
       return event.ctrlKey && event.altKey && event.shiftKey &&
@@ -4090,9 +4107,9 @@
       cornerTimer = setTimeout(() => {
         cornerTapCount = 0;
       }, 850);
-      if (cornerTapCount >= 3) {
+      if (cornerTapCount >= 3 && locked) {
         cornerTapCount = 0;
-        unlockProjection();
+        unlockProjection({ localEmergency: true });
       }
     });
 

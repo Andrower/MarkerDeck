@@ -37,4 +37,5 @@
     <string name="display_unexpected_navigation">投放页面尝试打开不受允许的地址。</string>
     <string name="retry">重试</string>
     <string name="back_to_settings">返回设置</string>
+    <string name="emergency_exit_projection">退出投放</string>
 </resources>
