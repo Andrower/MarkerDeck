@@ -2,18 +2,27 @@ package com.andrower.markerdeck
 
 import android.app.Activity
 import android.annotation.SuppressLint
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Color
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
+import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -33,6 +42,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : Activity() {
+    companion object {
+        private const val CAPABILITY_WARNING_DURATION_MS = 4_000L
+        private const val STATE_PROJECTION_ACTIVE = "projection_active"
+        private const val STATE_SERVICE_ADDRESS = "projection_service_address"
+        private const val STATE_DEVICE_NAME = "projection_device_name"
+    }
+
     private lateinit var settingsScreen: View
     private lateinit var displayScreen: View
     private lateinit var serviceAddressInput: EditText
@@ -43,6 +59,8 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var displayStatusPanel: View
     private lateinit var displayStatusMessage: TextView
+    private lateinit var displayDiagnosticMessage: TextView
+    private lateinit var displayCapabilityWarningMessage: TextView
     private lateinit var displayProgress: ProgressBar
     private lateinit var retryButton: Button
     private lateinit var backToSettingsButton: Button
@@ -52,12 +70,39 @@ class MainActivity : Activity() {
     private var displayActive = false
     private var displayLoadFailed = false
     private var webViewHasDisplayPage = false
+    private var displayPageHealthy = false
+    private var displayLoadInFlight = false
+    private var displayMainFrameFailed = false
+    private var displayDeviceName: String? = null
+    private var displayDiagnosticState = ProjectionDiagnosticState.IDLE_SETTINGS
+    private var screenReceiverRegistered = false
+    private var screenReceiverCapabilityWarning = false
+    private var displayWindowStateApplied = false
+    private var activityResumed = false
+    private var webViewLifecycleResumed = false
+    private var displayWebViewUsable = true
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var transientCapabilityWarningVisible = false
+    private var transientCapabilityWarningToken = 0
+    private var transientCapabilityWarningHideCallback: Runnable? = null
     private var backCallback: android.window.OnBackInvokedCallback? = null
     private var settingsDraft = SettingsDraft()
     private var applyingSettingsDraft = false
     private var displayOrigin: String? = null
     private var mainFrameUrl: String? = null
+    private var webViewLayoutIndex = 0
+    private var webViewLayoutParams: ViewGroup.LayoutParams? = null
     private var cleanupNavigationPending = false
+
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (!displayActive) return
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_USER_PRESENT -> restoreActiveDisplay(ProjectionDiagnosticState.SCREEN_ON_RECOVERY)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,10 +110,27 @@ class MainActivity : Activity() {
 
         settingsRepository = SettingsRepository(applicationContext.markerdeckDataStore)
         bindViews()
-        configureWebView()
+        configureWebView(webView)
         bindActions()
         registerBackHandler()
-        showSettingsScreen()
+        val savedProjection = validateSavedProjection(
+            projectionActive = savedInstanceState?.getBoolean(STATE_PROJECTION_ACTIVE, false) == true,
+            serviceAddress = savedInstanceState?.getString(STATE_SERVICE_ADDRESS),
+            deviceName = savedInstanceState?.getString(STATE_DEVICE_NAME)
+        )
+        if (savedProjection == null) {
+            showSettingsScreen()
+        } else {
+            val restored = showDisplayScreen(
+                MarkerDeckSettings(
+                    serviceAddress = savedProjection.serviceAddress,
+                    deviceName = savedProjection.deviceName
+                )
+            )
+            if (!restored) {
+                showSettingsError(getString(R.string.display_renderer_recovery_failed_settings))
+            }
+        }
         observeSettings()
     }
 
@@ -83,9 +145,13 @@ class MainActivity : Activity() {
         webView = findViewById(R.id.displayWebView)
         displayStatusPanel = findViewById(R.id.displayStatusPanel)
         displayStatusMessage = findViewById(R.id.displayStatusMessage)
+        displayDiagnosticMessage = findViewById(R.id.displayDiagnosticMessage)
+        displayCapabilityWarningMessage = findViewById(R.id.displayCapabilityWarningMessage)
         displayProgress = findViewById(R.id.displayProgress)
         retryButton = findViewById(R.id.retryButton)
         backToSettingsButton = findViewById(R.id.backToSettingsButton)
+        webViewLayoutIndex = (webView.parent as? ViewGroup)?.indexOfChild(webView) ?: 0
+        webViewLayoutParams = webView.layoutParams
         serviceAddressInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
 
@@ -119,9 +185,9 @@ class MainActivity : Activity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun configureWebView() {
-        webView.setBackgroundColor(Color.BLACK)
-        webView.settings.apply {
+    private fun configureWebView(target: WebView) {
+        target.setBackgroundColor(Color.BLACK)
+        target.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             allowFileAccess = false
@@ -132,10 +198,11 @@ class MainActivity : Activity() {
             displayZoomControls = false
             setSupportZoom(false)
         }
-        webView.webViewClient = object : WebViewClient() {
+        target.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                if (!isCurrentWebView(view)) return
                 super.onPageStarted(view, url, favicon)
-                if (consumePendingCleanupNavigation(url)) return
+                if (isCleanupNavigationPending(url)) return
                 if (!displayActive) {
                     view.stopLoading()
                     return
@@ -145,10 +212,14 @@ class MainActivity : Activity() {
                     return
                 }
                 mainFrameUrl = url
+                displayLoadInFlight = true
+                displayPageHealthy = false
+                displayMainFrameFailed = false
                 showDisplayLoading()
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                if (!isCurrentWebView(view)) return
                 super.onPageFinished(view, url)
                 if (consumePendingCleanupNavigation(url)) return
                 if (!displayActive) return
@@ -156,17 +227,27 @@ class MainActivity : Activity() {
                     blockUnexpectedNavigation(view)
                     return
                 }
-                if (!displayLoadFailed) hideDisplayStatus()
+                displayLoadInFlight = false
+                if (!displayLoadFailed) {
+                    displayPageHealthy = true
+                    displayMainFrameFailed = false
+                    displayDiagnosticState = ProjectionDiagnosticState.PROJECTION_ACTIVE
+                    hideDisplayStatus()
+                    updateCapabilityDiagnostic()
+                }
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (!isCurrentWebView(view)) return true
                 if (!request.isForMainFrame) return false
                 return handleTopLevelNavigation(view, request.url.toString())
             }
 
             @Suppress("DEPRECATION")
-            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
-                handleTopLevelNavigation(view, url)
+            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                if (!isCurrentWebView(view)) return true
+                return handleTopLevelNavigation(view, url)
+            }
 
             private fun handleTopLevelNavigation(view: WebView, url: String): Boolean {
                 if (!displayActive) {
@@ -184,9 +265,17 @@ class MainActivity : Activity() {
                 request: WebResourceRequest,
                 error: WebResourceError
             ) {
+                if (!isCurrentWebView(view)) return
                 super.onReceivedError(view, request, error)
+                if (isCleanupNavigationPending(request.url.toString())) return
                 if (displayActive && request.isForMainFrame && !displayLoadFailed) {
-                    showDisplayError("服务不可达或投放页面加载失败。")
+                    displayLoadInFlight = false
+                    displayPageHealthy = false
+                    displayMainFrameFailed = true
+                    showDisplayError(
+                        "服务不可达或投放页面加载失败。",
+                        ProjectionDiagnosticState.PROJECTION_FAILURE
+                    )
                 }
             }
 
@@ -195,9 +284,17 @@ class MainActivity : Activity() {
                 request: WebResourceRequest,
                 errorResponse: WebResourceResponse
             ) {
+                if (!isCurrentWebView(view)) return
                 super.onReceivedHttpError(view, request, errorResponse)
+                if (isCleanupNavigationPending(request.url.toString())) return
                 if (displayActive && request.isForMainFrame && !displayLoadFailed) {
-                    showDisplayError("服务返回错误（HTTP ${errorResponse.statusCode}）。")
+                    displayLoadInFlight = false
+                    displayPageHealthy = false
+                    displayMainFrameFailed = true
+                    showDisplayError(
+                        "服务返回错误（HTTP ${errorResponse.statusCode}）。",
+                        ProjectionDiagnosticState.PROJECTION_FAILURE
+                    )
                 }
             }
 
@@ -207,11 +304,68 @@ class MainActivity : Activity() {
                 error: SslError
             ) {
                 handler.cancel()
+                if (!isCurrentWebView(view)) return
+                if (isCleanupNavigationPending(error.url)) return
                 if (displayActive && !displayLoadFailed &&
                     (error.url == mainFrameUrl || error.url == view.url)
                 ) {
-                    showDisplayError("HTTPS 证书验证失败。")
+                    displayLoadInFlight = false
+                    displayPageHealthy = false
+                    displayMainFrameFailed = true
+                    showDisplayError(
+                        "HTTPS 证书验证失败。",
+                        ProjectionDiagnosticState.PROJECTION_FAILURE
+                    )
                 }
+            }
+
+            override fun onRenderProcessGone(
+                view: WebView,
+                detail: RenderProcessGoneDetail
+            ): Boolean {
+                if (view !== webView || !displayWebViewUsable) {
+                    destroyWebViewAfterRendererExit(view)
+                    return true
+                }
+
+                webViewLifecycleResumed = false
+                webViewHasDisplayPage = false
+
+                if (isFinishing || isDestroyed) {
+                    destroyWebViewAfterRendererExit(view)
+                    return true
+                }
+
+                if (!displayActive) {
+                    if (!replaceWebViewAfterRendererExit(view)) {
+                        showSettingsError(getString(R.string.display_renderer_recovery_failed_settings))
+                    }
+                    return true
+                }
+
+                displayLoadInFlight = false
+                displayPageHealthy = false
+                displayMainFrameFailed = true
+                displayLoadFailed = false
+                displayDiagnosticState = ProjectionDiagnosticState.RENDERER_RECOVERY
+                clearTransientCapabilityWarning()
+                displayScreen.visibility = View.VISIBLE
+                displayScreen.bringToFront()
+                showDisplayLoading()
+                if (!replaceWebViewAfterRendererExit(view)) {
+                    displayDiagnosticState = ProjectionDiagnosticState.DEGRADED_RECOVERY_FAILURE
+                    showDisplayError(
+                        getString(R.string.display_renderer_recovery_failed),
+                        ProjectionDiagnosticState.DEGRADED_RECOVERY_FAILURE,
+                        allowRetry = true
+                    )
+                    return true
+                }
+
+                if (activityResumed) {
+                    loadDisplayPage(loadingState = ProjectionDiagnosticState.RENDERER_RECOVERY)
+                }
+                return true
             }
         }
     }
@@ -236,7 +390,10 @@ class MainActivity : Activity() {
 
     private fun blockUnexpectedNavigation(view: WebView) {
         view.stopLoading()
-        showDisplayError(getString(R.string.display_unexpected_navigation))
+        showDisplayError(
+            getString(R.string.display_unexpected_navigation),
+            ProjectionDiagnosticState.PROJECTION_FAILURE
+        )
     }
 
     private fun bindActions() {
@@ -312,34 +469,76 @@ class MainActivity : Activity() {
             settingsRepository.save(savedSettings)
             settingsDraft = settingsDraftFromSaved(savedSettings)
             applySettingsDraftToViews()
-            showDisplayScreen(savedSettings)
+            if (!showDisplayScreen(savedSettings)) {
+                showSettingsScreen()
+                showSettingsError(getString(R.string.display_renderer_recovery_failed_settings))
+            }
         }
     }
 
-    private fun showDisplayScreen(settings: MarkerDeckSettings) {
+    private fun showDisplayScreen(settings: MarkerDeckSettings): Boolean {
         val normalizedAddress = normalizeServiceAddress(settings.serviceAddress)
+        val normalizedSettings = settings.copy(
+            serviceAddress = normalizedAddress,
+            deviceName = normalizeDeviceName(settings.deviceName)
+        )
+        if (!prepareWebViewForProjection()) return false
+
+        settingsDraft = settingsDraftFromSaved(normalizedSettings)
+        applySettingsDraftToViews()
+        modeValue.text = settingsDraft.mode.label
         displayOrigin = normalizedAddress
+        displayDeviceName = normalizedSettings.deviceName
         mainFrameUrl = null
         cleanupNavigationPending = false
         displayActive = true
         displayLoadFailed = false
+        displayPageHealthy = false
+        displayMainFrameFailed = false
+        displayLoadInFlight = false
+        displayDiagnosticState = ProjectionDiagnosticState.PROJECTION_ACTIVE
+        clearTransientCapabilityWarning()
         settingsScreen.visibility = View.GONE
         displayScreen.visibility = View.VISIBLE
+        displayScreen.bringToFront()
         connectButton.isEnabled = true
         applyDisplayWindowState()
-        loadDisplayPage(settings.copy(serviceAddress = normalizedAddress))
+        loadDisplayPage(normalizedSettings)
+        registerScreenStateReceiver()
+        return true
     }
 
-    private fun loadDisplayPage(settings: MarkerDeckSettings? = null) {
+    private fun loadDisplayPage(
+        settings: MarkerDeckSettings? = null,
+        loadingState: ProjectionDiagnosticState? = null
+    ) {
         if (!displayActive) return
+        if (!prepareWebViewForProjection()) {
+            showDisplayError(
+                getString(R.string.display_renderer_recovery_failed),
+                ProjectionDiagnosticState.DEGRADED_RECOVERY_FAILURE,
+                allowRetry = true
+            )
+            return
+        }
+        if (loadingState != null) {
+            displayDiagnosticState = loadingState
+        } else if (displayDiagnosticState == ProjectionDiagnosticState.PROJECTION_FAILURE ||
+            displayDiagnosticState == ProjectionDiagnosticState.DEGRADED_RECOVERY_FAILURE
+        ) {
+            displayDiagnosticState = ProjectionDiagnosticState.PROJECTION_ACTIVE
+        }
         displayLoadFailed = false
+        displayMainFrameFailed = false
+        displayPageHealthy = false
+        displayLoadInFlight = true
         showDisplayLoading()
-        webView.onResume()
-        webView.resumeTimers()
+        resumeWebViewIfNeeded()
         val address = settings?.serviceAddress ?: displayOrigin ?: serviceAddressInput.text.toString()
-        val name = settings?.deviceName ?: deviceNameInput.text.toString()
+        val name = settings?.deviceName ?: displayDeviceName.orEmpty()
         val normalizedAddress = normalizeServiceAddress(address)
         if (displayOrigin == null) displayOrigin = normalizedAddress
+        if (displayDeviceName == null) displayDeviceName = normalizeDeviceName(name)
         val displayUrl = buildDisplayUrl(normalizedAddress, name)
         webViewHasDisplayPage = true
         mainFrameUrl = displayUrl
@@ -347,23 +546,57 @@ class MainActivity : Activity() {
         webView.loadUrl(displayUrl)
     }
 
+    private fun isCurrentWebView(view: WebView): Boolean = view === webView && displayWebViewUsable
+
+    private fun resumeWebViewIfNeeded() {
+        if (!activityResumed || !displayWebViewUsable || webViewLifecycleResumed) return
+        webView.onResume()
+        webView.resumeTimers()
+        webViewLifecycleResumed = true
+    }
+
+    private fun pauseWebViewIfNeeded() {
+        if (!webViewLifecycleResumed) return
+        webView.onPause()
+        webView.pauseTimers()
+        webViewLifecycleResumed = false
+    }
+
     private fun showDisplayLoading() {
         displayStatusPanel.visibility = View.VISIBLE
         displayProgress.visibility = View.VISIBLE
-        displayStatusMessage.setText(R.string.display_loading)
+        displayStatusMessage.text = when (displayDiagnosticState) {
+            ProjectionDiagnosticState.SCREEN_ON_RECOVERY ->
+                getString(R.string.display_screen_on_recovery)
+            ProjectionDiagnosticState.RENDERER_RECOVERY ->
+                getString(R.string.display_renderer_recovery)
+            else -> getString(R.string.display_loading)
+        }
         retryButton.visibility = View.GONE
+        updateCapabilityDiagnostic()
     }
 
     private fun hideDisplayStatus() {
         displayStatusPanel.visibility = View.GONE
+        updateCapabilityDiagnostic()
     }
 
-    private fun showDisplayError(message: String) {
+    private fun showDisplayError(
+        message: String,
+        diagnosticState: ProjectionDiagnosticState = ProjectionDiagnosticState.DEGRADED_RECOVERY_FAILURE,
+        allowRetry: Boolean = true
+    ) {
         displayLoadFailed = true
+        displayLoadInFlight = false
+        displayPageHealthy = false
+        displayDiagnosticState = diagnosticState
+        clearTransientCapabilityWarning()
         displayStatusPanel.visibility = View.VISIBLE
         displayProgress.visibility = View.GONE
         displayStatusMessage.text = message
-        retryButton.visibility = View.VISIBLE
+        retryButton.visibility = if (allowRetry) View.VISIBLE else View.GONE
+        retryButton.isEnabled = allowRetry
+        updateCapabilityDiagnostic()
     }
 
     private fun showSettingsError(message: String) {
@@ -372,39 +605,310 @@ class MainActivity : Activity() {
     }
 
     private fun showSettingsScreen() {
-        displayActive = false
-        displayLoadFailed = false
-        webView.stopLoading()
         val shouldClearWebView = webViewHasDisplayPage
-        webViewHasDisplayPage = false
+        val keyguardManager = getSystemService(KEYGUARD_SERVICE) as? KeyguardManager
+        val shouldFinish = shouldFinishBeforeShowingSettings(
+            projectionActive = displayActive,
+            isKeyguardLocked = keyguardManager?.isKeyguardLocked == true
+        )
+        unregisterScreenStateReceiver()
+        clearProjectionRuntimeStateForActivity()
+        displayDeviceName = null
         displayOrigin = null
         mainFrameUrl = null
-        if (shouldClearWebView) {
-            cleanupNavigationPending = true
-            webView.loadUrl(WEBVIEW_CLEANUP_URL)
+        if (displayWebViewUsable) {
+            webView.stopLoading()
+            if (shouldClearWebView) {
+                cleanupNavigationPending = true
+                webView.loadUrl(WEBVIEW_CLEANUP_URL)
+            } else {
+                cleanupNavigationPending = false
+            }
+            pauseWebViewIfNeeded()
         } else {
             cleanupNavigationPending = false
+            webViewLifecycleResumed = false
         }
-        webView.onPause()
-        webView.pauseTimers()
+        clearDisplayWindowState()
+        if (shouldFinish) {
+            finish()
+            return
+        }
         displayScreen.visibility = View.GONE
         settingsScreen.visibility = View.VISIBLE
         connectButton.isEnabled = true
         serviceAddressInput.isEnabled = true
         deviceNameInput.isEnabled = true
-        clearDisplayWindowState()
+        displayDiagnosticMessage.visibility = View.GONE
         settingsStatus.setText(R.string.settings_not_connected_status)
         settingsStatus.setTextColor(getColor(R.color.markerdeck_muted))
     }
 
+    private fun clearProjectionRuntimeStateForActivity() {
+        val cleared = clearProjectionRuntimeState(
+            ProjectionRuntimeState(
+                projectionActive = displayActive,
+                webViewHasPage = webViewHasDisplayPage,
+                pageHealthy = displayPageHealthy,
+                mainFrameFailed = displayMainFrameFailed,
+                loadInFlight = displayLoadInFlight,
+                windowStateApplied = displayWindowStateApplied,
+                screenReceiverRegistered = screenReceiverRegistered,
+                recoveryPending = false
+            )
+        )
+        displayActive = cleared.projectionActive
+        webViewHasDisplayPage = cleared.webViewHasPage
+        displayPageHealthy = cleared.pageHealthy
+        displayMainFrameFailed = cleared.mainFrameFailed
+        displayLoadInFlight = cleared.loadInFlight
+        displayWindowStateApplied = cleared.windowStateApplied
+        screenReceiverRegistered = cleared.screenReceiverRegistered
+        screenReceiverCapabilityWarning = false
+        displayLoadFailed = false
+        displayDiagnosticState = ProjectionDiagnosticState.IDLE_SETTINGS
+        clearTransientCapabilityWarning()
+    }
+
     private fun applyDisplayWindowState() {
+        if (!displayActive) return
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            // minSdk is 26, so this legacy path is API 26 only.
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
         enterImmersiveMode(window)
+        displayWindowStateApplied = true
     }
 
     private fun clearDisplayWindowState() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(false)
+            setTurnScreenOn(false)
+        }
+        @Suppress("DEPRECATION")
+        window.clearFlags(
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        )
         exitImmersiveMode(window)
+        displayWindowStateApplied = false
+    }
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private fun registerScreenStateReceiver() {
+        if (screenReceiverRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(screenStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(screenStateReceiver, filter)
+            }
+            screenReceiverRegistered = true
+            screenReceiverCapabilityWarning = false
+            clearTransientCapabilityWarning()
+        } catch (_: SecurityException) {
+            recordScreenReceiverRegistrationFailure()
+        } catch (_: IllegalArgumentException) {
+            recordScreenReceiverRegistrationFailure()
+        }
+    }
+
+    private fun recordScreenReceiverRegistrationFailure() {
+        screenReceiverRegistered = false
+        screenReceiverCapabilityWarning = true
+        if (shouldShowScreenReceiverWarning(displayActive, screenReceiverRegistered)) {
+            showTransientCapabilityWarning(getString(R.string.display_receiver_registration_failed))
+        }
+    }
+
+    private fun unregisterScreenStateReceiver() {
+        if (!screenReceiverRegistered) {
+            screenReceiverCapabilityWarning = false
+            return
+        }
+        try {
+            unregisterReceiver(screenStateReceiver)
+        } catch (_: IllegalArgumentException) {
+            // The framework may already have detached a receiver during Activity teardown.
+        } finally {
+            screenReceiverRegistered = false
+            screenReceiverCapabilityWarning = false
+        }
+    }
+
+    private fun restoreActiveDisplay(recoveryState: ProjectionDiagnosticState) {
+        if (!displayActive) return
+        displayScreen.visibility = View.VISIBLE
+        displayScreen.bringToFront()
+        applyDisplayWindowState()
+        resumeWebViewIfNeeded()
+        displayDiagnosticState = recoveryState
+        updateCapabilityDiagnostic()
+
+        val pageState = DisplayPageState(
+            projectionActive = displayActive,
+            pageHealthy = displayPageHealthy && webViewHasDisplayPage && displayWebViewUsable,
+            mainFrameFailed = displayMainFrameFailed || displayLoadFailed,
+            loadInFlight = displayLoadInFlight
+        )
+        if (activityResumed && shouldReloadDisplayPage(pageState)) {
+            loadDisplayPage(loadingState = recoveryState)
+        } else if (displayPageHealthy && displayWebViewUsable) {
+            displayDiagnosticState = ProjectionDiagnosticState.PROJECTION_ACTIVE
+            hideDisplayStatus()
+        }
+    }
+
+    private fun replaceWebViewAfterRendererExit(exitedWebView: WebView): Boolean {
+        val parent = exitedWebView.parent as? ViewGroup
+        val index = parent?.indexOfChild(exitedWebView)?.takeIf { it >= 0 } ?: webViewLayoutIndex
+        val layoutParams = exitedWebView.layoutParams ?: webViewLayoutParams
+        destroyWebViewAfterRendererExit(exitedWebView)
+        return createReplacementWebView(
+            parent = parent ?: displayScreen as ViewGroup,
+            index = index,
+            layoutParams = layoutParams
+        )
+    }
+
+    private fun prepareWebViewForProjection(): Boolean {
+        if (displayWebViewUsable) return true
+        (webView.parent as? ViewGroup)?.removeView(webView)
+        return createReplacementWebView(
+            parent = displayScreen as ViewGroup,
+            index = webViewLayoutIndex,
+            layoutParams = webViewLayoutParams
+        )
+    }
+
+    private fun destroyWebViewAfterRendererExit(exitedWebView: WebView) {
+        if (exitedWebView === webView) {
+            displayWebViewUsable = false
+            webViewLifecycleResumed = false
+            webViewHasDisplayPage = false
+        }
+        try {
+            (exitedWebView.parent as? ViewGroup)?.removeView(exitedWebView)
+        } catch (_: RuntimeException) {
+            // The renderer-exit callback can race with hierarchy teardown.
+        }
+        try {
+            exitedWebView.destroy()
+        } catch (_: RuntimeException) {
+            // The view is already unusable; do not let teardown mask recovery.
+        }
+    }
+
+    private fun createReplacementWebView(
+        parent: ViewGroup,
+        index: Int,
+        layoutParams: ViewGroup.LayoutParams?
+    ): Boolean {
+        var replacement: WebView? = null
+        return try {
+            val insertionIndex = index.coerceIn(0, parent.childCount)
+            replacement = WebView(this).apply {
+                id = R.id.displayWebView
+                this.layoutParams = layoutParams ?: ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                overScrollMode = View.OVER_SCROLL_NEVER
+            }
+            parent.addView(replacement, insertionIndex)
+            configureWebView(replacement)
+            webView = replacement
+            webViewLayoutIndex = insertionIndex
+            webViewLayoutParams = replacement.layoutParams
+            displayWebViewUsable = true
+            webViewHasDisplayPage = false
+            webViewLifecycleResumed = false
+            true
+        } catch (_: RuntimeException) {
+            replacement?.let { failedReplacement ->
+                try {
+                    (failedReplacement.parent as? ViewGroup)?.removeView(failedReplacement)
+                } catch (_: RuntimeException) {
+                    // Best-effort cleanup for a partially attached replacement.
+                }
+                try {
+                    failedReplacement.destroy()
+                } catch (_: RuntimeException) {
+                    // Nothing else can safely be done with a failed replacement.
+                }
+            }
+            displayWebViewUsable = false
+            false
+        }
+    }
+
+    private fun updateCapabilityDiagnostic() {
+        if (!displayActive) {
+            displayDiagnosticMessage.visibility = View.GONE
+            displayCapabilityWarningMessage.visibility = View.GONE
+            return
+        }
+        if (!screenReceiverCapabilityWarning || !transientCapabilityWarningVisible) {
+            displayCapabilityWarningMessage.visibility = View.GONE
+        }
+        val pageHealthy = displayPageHealthy && webViewHasDisplayPage && displayWebViewUsable
+        if (pageHealthy) {
+            displayDiagnosticMessage.visibility = View.GONE
+            return
+        }
+        if (!shouldShowProjectionDiagnostic(
+            projectionActive = displayActive,
+            projectionState = displayDiagnosticState,
+            pageHealthy = pageHealthy
+        )) {
+            displayDiagnosticMessage.visibility = View.GONE
+            return
+        }
+        displayDiagnosticMessage.text = projectionDiagnosticWording(displayDiagnosticState)
+        displayDiagnosticMessage.visibility = View.VISIBLE
+    }
+
+    private fun showTransientCapabilityWarning(message: String) {
+        if (!displayActive || !screenReceiverCapabilityWarning) return
+        clearTransientCapabilityWarning()
+        transientCapabilityWarningToken += 1
+        val token = transientCapabilityWarningToken
+        transientCapabilityWarningVisible = true
+        displayCapabilityWarningMessage.text = message
+        displayCapabilityWarningMessage.visibility = View.VISIBLE
+        val hideCallback = Runnable {
+            if (token == transientCapabilityWarningToken && displayActive) {
+                transientCapabilityWarningVisible = false
+                transientCapabilityWarningHideCallback = null
+                displayCapabilityWarningMessage.visibility = View.GONE
+                updateCapabilityDiagnostic()
+            }
+        }
+        transientCapabilityWarningHideCallback = hideCallback
+        mainHandler.postDelayed(hideCallback, CAPABILITY_WARNING_DURATION_MS)
+    }
+
+    private fun clearTransientCapabilityWarning() {
+        transientCapabilityWarningToken += 1
+        transientCapabilityWarningVisible = false
+        if (::displayCapabilityWarningMessage.isInitialized) {
+            displayCapabilityWarningMessage.visibility = View.GONE
+        }
+        transientCapabilityWarningHideCallback?.let(mainHandler::removeCallbacks)
+        transientCapabilityWarningHideCallback = null
     }
 
     private fun registerBackHandler() {
@@ -453,12 +957,17 @@ class MainActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && displayActive) enterImmersiveMode(window)
+        if (hasFocus && displayActive) {
+            restoreActiveDisplay(ProjectionDiagnosticState.PROJECTION_ACTIVE)
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (displayActive) enterImmersiveMode(window)
+        if (displayActive) {
+            applyDisplayWindowState()
+            updateCapabilityDiagnostic()
+        }
     }
 
     @SuppressLint("GestureBackNavigation")
@@ -468,26 +977,50 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
-        if (displayActive) webView.onPause()
+        activityResumed = false
+        if (displayActive) pauseWebViewIfNeeded()
         super.onPause()
     }
 
     override fun onResume() {
         super.onResume()
+        activityResumed = true
         if (displayActive) {
-            webView.onResume()
-            webView.resumeTimers()
+            restoreActiveDisplay(ProjectionDiagnosticState.SCREEN_ON_RECOVERY)
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val savedProjection = validateSavedProjection(
+            projectionActive = displayActive,
+            serviceAddress = displayOrigin,
+            deviceName = displayDeviceName
+        )
+        outState.putBoolean(STATE_PROJECTION_ACTIVE, savedProjection != null)
+        savedProjection?.let { projection ->
+            outState.putString(STATE_SERVICE_ADDRESS, projection.serviceAddress)
+            outState.putString(STATE_DEVICE_NAME, projection.deviceName)
         }
     }
 
     override fun onDestroy() {
         activityScope.cancel()
+        mainHandler.removeCallbacksAndMessages(null)
+        unregisterScreenStateReceiver()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
         }
-        webView.stopLoading()
-        webView.destroy()
+        pauseWebViewIfNeeded()
+        activityResumed = false
         clearDisplayWindowState()
+        displayActive = false
+        if (displayWebViewUsable) {
+            webView.stopLoading()
+            webView.destroy()
+            displayWebViewUsable = false
+        }
+        clearTransientCapabilityWarning()
         super.onDestroy()
     }
 }

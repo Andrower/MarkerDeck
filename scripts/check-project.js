@@ -31,6 +31,7 @@ const androidRequiredFiles = [
   "android/app/build.gradle.kts",
   "android/app/src/main/AndroidManifest.xml",
   "android/app/src/main/kotlin/com/andrower/markerdeck/MainActivity.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/LifecycleRecovery.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/ServiceUrl.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/Settings.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/SettingsRepository.kt",
@@ -48,6 +49,7 @@ const androidRequiredFiles = [
   "android/app/src/main/res/xml/backup_rules.xml",
   "android/app/src/main/res/xml/data_extraction_rules.xml",
   "android/app/src/test/kotlin/com/andrower/markerdeck/ServiceUrlTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/LifecycleRecoveryTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/SettingsTest.kt",
   "android/README.md",
   ".github/workflows/android-check.yml"
