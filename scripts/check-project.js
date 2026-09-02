@@ -20,7 +20,33 @@ const requiredFiles = [
   "platform/windows/start-markerdeck-server.bat"
 ];
 
-requiredFiles.forEach((relativePath) => {
+const androidRequiredFiles = [
+  "android/settings.gradle.kts",
+  "android/build.gradle.kts",
+  "android/gradle.properties",
+  "android/gradlew",
+  "android/gradlew.bat",
+  "android/gradle/wrapper/gradle-wrapper.jar",
+  "android/gradle/wrapper/gradle-wrapper.properties",
+  "android/app/build.gradle.kts",
+  "android/app/src/main/AndroidManifest.xml",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/MainActivity.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/ServiceUrl.kt",
+  "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
+  "android/app/src/main/res/drawable/ic_launcher_monochrome.xml",
+  "android/app/src/main/res/layout/activity_main.xml",
+  "android/app/src/main/res/mipmap-anydpi/ic_launcher.xml",
+  "android/app/src/main/res/values/colors.xml",
+  "android/app/src/main/res/values/strings.xml",
+  "android/app/src/main/res/values/themes.xml",
+  "android/app/src/main/res/xml/backup_rules.xml",
+  "android/app/src/main/res/xml/data_extraction_rules.xml",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/ServiceUrlTest.kt",
+  "android/README.md",
+  ".github/workflows/android-check.yml"
+];
+
+requiredFiles.concat(androidRequiredFiles).forEach((relativePath) => {
   assert.ok(fs.existsSync(path.join(root, relativePath)), `Missing required file: ${relativePath}`);
 });
 
