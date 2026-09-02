@@ -10,6 +10,7 @@
     <string name="device_name_helper">名称会传给投放页面并用于控制端识别</string>
     <string name="mode_label">运行模式</string>
     <string name="mode_unavailable_note">当前仅支持普通投放</string>
+    <string name="settings_security_note">普通模式受系统安全锁限制，不能绕过认证。</string>
     <string name="connect">连接并开始投放</string>
     <string name="settings_not_connected_status">未连接。填写配置后点击连接。</string>
     <string name="settings_restored_status">已恢复配置，尚未连接。</string>
@@ -18,6 +19,11 @@
     <string name="invalid_address">服务地址无效。</string>
     <string name="device_name_required">请输入设备名称。</string>
     <string name="display_loading">正在加载投放页面&#8230;</string>
+    <string name="display_screen_on_recovery">屏幕已点亮，正在恢复普通投放&#8230;</string>
+    <string name="display_renderer_recovery">WebView 渲染进程已退出，正在重建投放页面&#8230;</string>
+    <string name="display_renderer_recovery_failed">WebView 渲染进程恢复失败，请点击重试或返回设置。</string>
+    <string name="display_renderer_recovery_failed_settings">WebView 渲染进程重建失败，请重新连接。</string>
+    <string name="display_receiver_registration_failed">无法注册屏幕状态监听，普通投放继续运行。</string>
     <string name="display_unexpected_navigation">投放页面尝试打开不受允许的地址。</string>
     <string name="retry">重试</string>
     <string name="back_to_settings">返回设置</string>
