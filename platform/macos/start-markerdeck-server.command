@@ -3,15 +3,15 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-if [ -f "$SCRIPT_DIR/app/chroma-control-server.js" ]; then
+if [ -f "$SCRIPT_DIR/app/markerdeck-server.js" ]; then
   APP_DIR="$SCRIPT_DIR/app"
   RUNTIME_DIR="$SCRIPT_DIR/runtime"
-  export CHROMA_DATA_DIR="${CHROMA_DATA_DIR:-$SCRIPT_DIR/data}"
+  export MARKERDECK_DATA_DIR="${MARKERDECK_DATA_DIR:-${CHROMA_DATA_DIR:-$SCRIPT_DIR/data}}"
 else
   REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
   APP_DIR="$REPO_ROOT/src"
   RUNTIME_DIR="$REPO_ROOT/runtime/macos"
-  export CHROMA_DATA_DIR="${CHROMA_DATA_DIR:-$REPO_ROOT/.data}"
+  export MARKERDECK_DATA_DIR="${MARKERDECK_DATA_DIR:-${CHROMA_DATA_DIR:-$REPO_ROOT/.data}}"
 fi
 
 cd "$APP_DIR"
@@ -47,7 +47,7 @@ else
 fi
 
 BASE_PORT="${PORT:-8765}"
-if [ ! -f "$APP_DIR/chroma-control-server.js" ] || [ ! -f "$APP_DIR/web/chroma-cross-screen.html" ] || [ ! -f "$APP_DIR/web/chroma-launch.html" ]; then
+if [ ! -f "$APP_DIR/markerdeck-server.js" ] || [ ! -f "$APP_DIR/web/markerdeck-screen.html" ] || [ ! -f "$APP_DIR/web/markerdeck-launch.html" ]; then
   echo "Missing application files in $APP_DIR."
   read -r "?Press Enter to close..."
   exit 1
@@ -70,12 +70,12 @@ PORT="$(find_free_port "$BASE_PORT")"
 export PORT
 
 LAN_IP="$("$NODE_BIN" -e 'const os=require("os"); for (const list of Object.values(os.networkInterfaces())) for (const item of list || []) if (item.family==="IPv4" && !item.internal) { console.log(item.address); process.exit(0); } console.log("127.0.0.1");')"
-LAUNCH_URL="http://localhost:$PORT/chroma-launch.html"
-MOBILE_URL="http://$LAN_IP:$PORT/chroma-launch.html"
-DISPLAY_URL="http://$LAN_IP:$PORT/chroma-cross-screen.html?mode=display"
-CONTROL_URL="http://$LAN_IP:$PORT/chroma-cross-screen.html?mode=control"
+LAUNCH_URL="http://localhost:$PORT/markerdeck-launch.html"
+MOBILE_URL="http://$LAN_IP:$PORT/markerdeck-launch.html"
+DISPLAY_URL="http://$LAN_IP:$PORT/markerdeck-screen.html?mode=display"
+CONTROL_URL="http://$LAN_IP:$PORT/markerdeck-screen.html?mode=control"
 
-echo "Chroma Cross Server"
+echo "MarkerDeck 视效标记屏控服务"
 echo "Files: $APP_DIR"
 echo "Local URL: $LAUNCH_URL"
 echo "Mobile URL: $MOBILE_URL"
@@ -88,4 +88,4 @@ echo "Press Control-C to stop the service."
 echo
 
 (sleep 1; open "$LAUNCH_URL" >/dev/null 2>&1 || true) &
-"$NODE_BIN" "$APP_DIR/chroma-control-server.js"
+"$NODE_BIN" "$APP_DIR/markerdeck-server.js"

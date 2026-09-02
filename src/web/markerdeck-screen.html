@@ -6,7 +6,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>纯色投放十字屏</title>
+  <link rel="icon" href="data:,">
+  <title>MarkerDeck 视效标记屏控</title>
   <style>
     :root {
       color-scheme: dark;
@@ -1483,7 +1484,7 @@
   <section class="panel" id="panel">
     <div class="topbar">
       <div class="title">
-        <h1>纯色投放十字屏</h1>
+        <h1>MarkerDeck 视效标记屏控</h1>
         <div class="readout" id="readout"></div>
       </div>
       <button class="primary" id="lockBtn">锁定投放</button>
@@ -1783,10 +1784,28 @@
       outputIds.map((id) => [id, document.getElementById(`${id}Value`)])
     );
 
+    const STORAGE_KEYS = Object.freeze({
+      deviceId: "markerdeckDeviceId",
+      sessionId: "markerdeckSessionId",
+      deviceName: "markerdeckDeviceName",
+      presets: "markerdeckPresets",
+      recentPresets: "markerdeckRecentPresets",
+      favoritePresets: "markerdeckFavoritePresets",
+      sessionClaims: "markerdeck-session-claims"
+    });
+    const LEGACY_STORAGE_KEYS = Object.freeze({
+      deviceId: "chromaCrossDeviceId",
+      sessionId: "chromaCrossSessionId",
+      deviceName: "chromaCrossDeviceName",
+      presets: "chromaCrossPresets",
+      recentPresets: "chromaCrossRecentPresets",
+      favoritePresets: "chromaCrossFavoritePresets"
+    });
+
     let presets = [];
     let activePresetId = "";
-    let recentPresetIds = readStoredIdList("chromaCrossRecentPresets", 4);
-    let favoritePresetIds = new Set(readStoredIdList("chromaCrossFavoritePresets"));
+    let recentPresetIds = readStoredIdList(STORAGE_KEYS.recentPresets, LEGACY_STORAGE_KEYS.recentPresets, 4);
+    let favoritePresetIds = new Set(readStoredIdList(STORAGE_KEYS.favoritePresets, LEGACY_STORAGE_KEYS.favoritePresets));
 
     let wakeLock = null;
     let locked = false;
@@ -1841,12 +1860,24 @@
       return `rgb(${Math.round(rgb.r * level)}, ${Math.round(rgb.g * level)}, ${Math.round(rgb.b * level)})`;
     }
 
+    function readStorageWithLegacy(storage, key, legacyKey) {
+      const value = storage.getItem(key);
+      if (value !== null) return value;
+      const legacyValue = storage.getItem(legacyKey);
+      if (legacyValue !== null) {
+        try {
+          storage.setItem(key, legacyValue);
+        } catch (_) {}
+        return legacyValue;
+      }
+      return null;
+    }
+
     function getDeviceId() {
-      const key = "chromaCrossDeviceId";
-      let id = localStorage.getItem(key);
+      let id = readStorageWithLegacy(localStorage, STORAGE_KEYS.deviceId, LEGACY_STORAGE_KEYS.deviceId);
       if (!id) {
         id = `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-        localStorage.setItem(key, id);
+        localStorage.setItem(STORAGE_KEYS.deviceId, id);
       }
       return id;
     }
@@ -1859,18 +1890,17 @@
     }
 
     function createSessionId() {
-      const key = "chromaCrossSessionId";
-      const existing = sessionStorage.getItem(key);
+      const existing = readStorageWithLegacy(sessionStorage, STORAGE_KEYS.sessionId, LEGACY_STORAGE_KEYS.sessionId);
       if (existing) return existing;
       const id = createRandomId("screen");
-      sessionStorage.setItem(key, id);
+      sessionStorage.setItem(STORAGE_KEYS.sessionId, id);
       return id;
     }
 
     async function ensureUniqueSessionId() {
       if (!("BroadcastChannel" in window)) return;
       if (!sessionClaimChannel) {
-        sessionClaimChannel = new BroadcastChannel("chroma-cross-session-claims");
+        sessionClaimChannel = new BroadcastChannel(STORAGE_KEYS.sessionClaims);
         sessionClaimChannel.onmessage = (event) => {
           const message = event.data || {};
           if (message.type === "claim" && message.sessionId === sessionId && message.pageInstanceId !== pageInstanceId) {
@@ -1893,12 +1923,16 @@
       sessionConflictResolver = null;
       if (!conflicted) return;
       sessionId = createRandomId("screen");
-      sessionStorage.setItem("chromaCrossSessionId", sessionId);
+      sessionStorage.setItem(STORAGE_KEYS.sessionId, sessionId);
       sessionClaimChannel.postMessage({ type: "claim", sessionId, pageInstanceId });
     }
 
     function deviceName() {
-      const savedName = localStorage.getItem(`chromaCrossDeviceName:${deviceId}`);
+      const savedName = readStorageWithLegacy(
+        localStorage,
+        `${STORAGE_KEYS.deviceName}:${deviceId}`,
+        `${LEGACY_STORAGE_KEYS.deviceName}:${deviceId}`
+      );
       if (savedName) return savedName;
       const platform = navigator.platform || "设备";
       return `${platform} ${deviceId.slice(-4)}`;
@@ -1906,7 +1940,7 @@
 
     function saveLocalDeviceName(name) {
       const cleanName = String(name || "").trim().slice(0, 40);
-      if (cleanName) localStorage.setItem(`chromaCrossDeviceName:${deviceId}`, cleanName);
+      if (cleanName) localStorage.setItem(`${STORAGE_KEYS.deviceName}:${deviceId}`, cleanName);
       return cleanName;
     }
 
@@ -2517,7 +2551,7 @@
         if (mode === "zip") {
           exportAllPresetsBtn.textContent = "正在生成 ZIP";
           const zip = await makeZipBlob(zipFiles);
-          downloadBlob(zip, `chroma-presets-${size.width}x${size.height}.zip`);
+          downloadBlob(zip, `markerdeck-presets-${size.width}x${size.height}.zip`);
         }
         updateStatus(`已导出 ${presets.length} 个预设，${size.width} x ${size.height}`);
       } catch (error) {
@@ -2534,9 +2568,9 @@
       }
     }
 
-    function readStoredIdList(key, limit = Infinity) {
+    function readStoredIdList(key, legacyKey, limit = Infinity) {
       try {
-        const value = JSON.parse(localStorage.getItem(key) || "[]");
+        const value = JSON.parse(readStorageWithLegacy(localStorage, key, legacyKey) || "[]");
         return Array.isArray(value) ? value.map(String).slice(0, limit) : [];
       } catch (_) {
         return [];
@@ -2544,8 +2578,8 @@
     }
 
     function saveMobilePresetPreferences() {
-      localStorage.setItem("chromaCrossRecentPresets", JSON.stringify(recentPresetIds));
-      localStorage.setItem("chromaCrossFavoritePresets", JSON.stringify([...favoritePresetIds]));
+      localStorage.setItem(STORAGE_KEYS.recentPresets, JSON.stringify(recentPresetIds));
+      localStorage.setItem(STORAGE_KEYS.favoritePresets, JSON.stringify([...favoritePresetIds]));
     }
 
     function setPresetSwatch(swatch, presetState = {}) {
@@ -2729,7 +2763,11 @@
     async function loadPresets() {
       if (!serverMode) {
         try {
-          presets = JSON.parse(localStorage.getItem("chromaCrossPresets") || "[]");
+          presets = JSON.parse(readStorageWithLegacy(
+            localStorage,
+            STORAGE_KEYS.presets,
+            LEGACY_STORAGE_KEYS.presets
+          ) || "[]");
         } catch (_) {
           presets = [];
         }
@@ -2768,7 +2806,7 @@
           presets = result.presets || presets;
         } else {
           presets.push({ id: `local-${Date.now()}`, name, state: presetState });
-          localStorage.setItem("chromaCrossPresets", JSON.stringify(presets));
+          localStorage.setItem(STORAGE_KEYS.presets, JSON.stringify(presets));
         }
         presetNameInput.value = "";
         buildPresets();
@@ -2794,7 +2832,7 @@
           presets = result.presets || [];
         } else {
           presets = presets.filter((item) => item.id !== preset.id);
-          localStorage.setItem("chromaCrossPresets", JSON.stringify(presets));
+          localStorage.setItem(STORAGE_KEYS.presets, JSON.stringify(presets));
         }
         buildPresets();
         updateStatus(`已删除预设：${preset.name}`);
@@ -3122,7 +3160,7 @@
           const result = await response.json();
           if (result.sessionId && result.sessionId !== sessionId) {
             sessionId = String(result.sessionId);
-            sessionStorage.setItem("chromaCrossSessionId", sessionId);
+            sessionStorage.setItem(STORAGE_KEYS.sessionId, sessionId);
           }
           if (result.name) saveLocalDeviceName(result.name);
           if (result.state && !applyingRemote) setState(result.state);
@@ -3730,7 +3768,7 @@
 
     async function loadServerInfo() {
       if (!serverMode) {
-        lanAddress.textContent = "当前是 file:// 文件模式：只能本地投放。请打开启动页地址：http://172.20.10.2:8765/chroma-launch.html";
+        lanAddress.textContent = "当前是 file:// 文件模式：只能本地投放。请打开启动页地址：http://172.20.10.2:8765/markerdeck-launch.html";
         qrImage.removeAttribute("src");
         qrBox.classList.add("unavailable");
         controlUrlText.textContent = "请先通过控制服务地址打开页面，当前 file:// 模式不支持二维码。";

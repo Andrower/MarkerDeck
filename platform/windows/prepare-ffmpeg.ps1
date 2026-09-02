@@ -14,7 +14,7 @@ if (Test-Path $binary) {
   exit 0
 }
 
-$temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("chroma-ffmpeg-" + [guid]::NewGuid().ToString("N"))
+$temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("markerdeck-ffmpeg-" + [guid]::NewGuid().ToString("N"))
 $archive = Join-Path $temporary "ffmpeg.zip"
 $expanded = Join-Path $temporary "expanded"
 $downloadUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
@@ -31,7 +31,7 @@ try {
   if (-not $downloaded) {
     Write-Host "Primary FFmpeg download is unavailable. Trying the publisher's GitHub Release..."
     if (Test-Path $archive) { Remove-Item $archive -Force }
-    $headers = @{ "User-Agent" = "chroma-cross-platform" }
+    $headers = @{ "User-Agent" = "markerdeck" }
     if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/GyanD/codexffmpeg/releases/latest" -Headers $headers
     $asset = $release.assets | Where-Object { $_.name -like "*-essentials_build.zip" } | Select-Object -First 1

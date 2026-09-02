@@ -2,10 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-1.2.0}"
+VERSION="${1:-1.3.0}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT/artifacts}"
-PACKAGE_NAME="chroma-cross-macos-arm64-v$VERSION"
-STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/chroma-macos.XXXXXX")"
+PACKAGE_NAME="markerdeck-macos-arm64-v$VERSION"
+STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/markerdeck-macos.XXXXXX")"
 PACKAGE_DIR="$STAGING_DIR/$PACKAGE_NAME"
 ARCHIVE="$ARTIFACT_DIR/$PACKAGE_NAME.zip"
 
@@ -16,7 +16,7 @@ trap cleanup EXIT
 
 mkdir -p "$PACKAGE_DIR/app" "$PACKAGE_DIR/runtime/node-macos" "$ARTIFACT_DIR"
 /usr/bin/ditto "$ROOT/src" "$PACKAGE_DIR/app"
-/usr/bin/ditto "$ROOT/platform/macos/start-chroma-server.command" "$PACKAGE_DIR/start-chroma-server.command"
+/usr/bin/ditto "$ROOT/platform/macos/start-markerdeck-server.command" "$PACKAGE_DIR/start-markerdeck-server.command"
 /usr/bin/ditto "$ROOT/docs/macos.md" "$PACKAGE_DIR/README.md"
 
 NODE_SOURCE="${NODE_MACOS_BIN:-$ROOT/runtime/macos/node-macos/node}"
@@ -35,7 +35,7 @@ if [ -x "$FFMPEG_SOURCE" ]; then
   /usr/bin/ditto "$FFMPEG_SOURCE" "$PACKAGE_DIR/runtime/ffmpeg-macos/ffmpeg"
 fi
 
-chmod +x "$PACKAGE_DIR/start-chroma-server.command" "$PACKAGE_DIR/runtime/node-macos/node"
+chmod +x "$PACKAGE_DIR/start-markerdeck-server.command" "$PACKAGE_DIR/runtime/node-macos/node"
 if [ -f "$PACKAGE_DIR/runtime/ffmpeg-macos/ffmpeg" ]; then
   chmod +x "$PACKAGE_DIR/runtime/ffmpeg-macos/ffmpeg"
 fi

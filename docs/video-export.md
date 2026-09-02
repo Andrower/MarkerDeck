@@ -1,6 +1,6 @@
 # 视频导出
 
-Chroma Cross 使用 FFmpeg 将当前画面或全部预设转换为静态 H.264 MP4。
+MarkerDeck 使用 FFmpeg 将当前画面或全部预设转换为静态 H.264 MP4。
 
 ## 功能范围
 

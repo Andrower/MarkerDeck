@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.3.0 - 2026-09-02
+
 - Reorganized the repository around one shared `src` tree.
 - Added repeatable macOS and Windows packaging scripts.
 - Added cross-platform GitHub Release automation.
@@ -12,6 +14,10 @@
 - Added control-side batch page selection, group management, and multi-page remote lock confirmation.
 - Added a mobile control quick-preset panel with recent and favorite presets.
 - Switched Windows desktop releases from portable EXEs to extractable ZIP packages and verified bundled FFmpeg and Node.js runtime files.
+- Renamed the product and repository from Chroma Cross to MarkerDeck, including repository-facing source files, web pages, launch scripts, package names, and release artifacts.
+- Preserved 302 redirects from `/chroma-launch.html` and `/chroma-cross-screen.html`, including their query parameters, for existing links.
+- Added fallback migration for legacy `CHROMA_*` environment variables, `chroma-settings.json`, `chroma-presets.json`, and `chromaCross*` browser storage keys while `MARKERDECK_*` and `markerdeck*` names remain canonical.
+- Documented the renamed macOS, Windows, and Electron packaging outputs, including `markerdeck-macos-arm64-v<version>.zip`, `markerdeck-windows-x64-v<version>.zip`, and `MarkerDeck.Client.<version>.zip`.
 
 ## 1.2.0-video - 2026-08-07
 
