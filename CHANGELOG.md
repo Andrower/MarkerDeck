@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Documented an Android-first mobile implementation plan split into acceptance-testable tasks, dependency gates, and release milestones.
+- Implemented MD-A01 Android foundation with a standalone Kotlin/Android SDK project, fixed AGP and Gradle versions, a pure service URL unit test, and a separate GitHub Actions debug-check job.
+
 ## 1.3.0 - 2026-09-02
 
 - Reorganized the repository around one shared `src` tree.

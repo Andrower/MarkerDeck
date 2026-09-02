@@ -91,11 +91,12 @@ v1.3.0 保留旧版 Chroma Cross 的迁移兼容：旧的 `/chroma-launch.html` 
 
 ## 开发与构建
 
-项目主要由原生 HTML/CSS/JavaScript、Node.js 本地服务和 Electron Windows 客户端组成。
+项目主要由原生 HTML/CSS/JavaScript、Node.js 本地服务和 Electron Windows 客户端组成；`android/` 是独立的 Android-first 工程。
 
 - 推荐 Node.js 24
 - Windows 客户端使用 Electron Builder 构建完整目录 ZIP
 - MP4 导出由 FFmpeg 完成
+- Android 当前只完成 MD-A01 foundation：原生 Activity、Gradle、单元测试和 CI，尚不是正式 Android 客户端 Release
 - 生成的 ZIP、Node.js 和 FFmpeg 运行时不提交到普通 Git 历史，而是放入 GitHub Releases
 
 常用命令：
@@ -105,6 +106,15 @@ npm start
 npm run check
 npm run package:mac
 ```
+
+Android 工程使用独立的 Gradle Wrapper；需要 JDK 17 或更高版本，当前本机验证使用 Android Studio JBR 21：
+
+```bash
+cd android
+./gradlew testDebugUnitTest lintDebug assembleDebug
+```
+
+完整的 JDK、Android SDK、版本矩阵和输出路径见 [Android 开发与构建](android/README.md)。
 
 macOS 发布包名为 `markerdeck-macos-arm64-v<版本号>.zip`，Windows 浏览器服务端发布包名为 `markerdeck-windows-x64-v<版本号>.zip`。
 
@@ -117,6 +127,7 @@ macOS 发布包名为 `markerdeck-macos-arm64-v<版本号>.zip`，Windows 浏览
 - [视频导出](docs/video-export.md)
 - [版本与回滚](docs/rollback.md)
 - [改进路线](docs/improvement-roadmap.md)
+- [Android 开发与构建](android/README.md)
 
 ## 许可
 
