@@ -1,4 +1,4 @@
-name: Build cross-platform release
+name: Build MarkerDeck release
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       version:
         description: Version without the v prefix
         required: true
-        default: "1.2.0"
+        default: "1.3.0"
       publish_release:
         description: Upload packages to a GitHub Release
         type: boolean
@@ -68,8 +68,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: chroma-cross-macos-arm64-${{ needs.prepare.outputs.version }}
-          path: artifacts/chroma-cross-macos-arm64-v${{ needs.prepare.outputs.version }}.zip
+          name: markerdeck-macos-arm64-${{ needs.prepare.outputs.version }}
+          path: artifacts/markerdeck-macos-arm64-v${{ needs.prepare.outputs.version }}.zip
           if-no-files-found: error
 
   windows:
@@ -119,16 +119,16 @@ jobs:
       - name: Verify desktop client ZIP
         shell: pwsh
         run: |
-          $archive = Get-ChildItem "desktop/electron/dist/Chroma.Cross.Client.*.zip" | Select-Object -First 1
+          $archive = Get-ChildItem "desktop/electron/dist/MarkerDeck.Client.*.zip" | Select-Object -First 1
           if (-not $archive) {
             throw "Desktop client ZIP was not created."
           }
 
-          $verifyRoot = Join-Path $env:RUNNER_TEMP "chroma-desktop-verify"
+          $verifyRoot = Join-Path $env:RUNNER_TEMP "markerdeck-desktop-verify"
           Expand-Archive -Path $archive.FullName -DestinationPath $verifyRoot -Force
 
           $requiredFiles = @(
-            "Chroma Cross Video Client.exe",
+            "MarkerDeck.exe",
             "ffmpeg.dll",
             "resources/server/node-windows/node.exe",
             "resources/server/ffmpeg-windows/ffmpeg.exe"
@@ -142,10 +142,10 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: chroma-cross-windows-x64-${{ needs.prepare.outputs.version }}
+          name: markerdeck-windows-x64-${{ needs.prepare.outputs.version }}
           path: |
-            artifacts/chroma-cross-windows-x64-v${{ needs.prepare.outputs.version }}.zip
-            desktop/electron/dist/Chroma.Cross.Client.*.zip
+            artifacts/markerdeck-windows-x64-v${{ needs.prepare.outputs.version }}.zip
+            desktop/electron/dist/MarkerDeck.Client.*.zip
           if-no-files-found: error
 
   release:
@@ -169,7 +169,7 @@ jobs:
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" \
               --target "$GITHUB_SHA" \
-              --title "Chroma Cross v$RELEASE_VERSION" \
+              --title "MarkerDeck v$RELEASE_VERSION" \
               --generate-notes
           fi
           while IFS= read -r -d '' asset; do

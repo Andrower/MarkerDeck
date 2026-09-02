@@ -1,4 +1,4 @@
-# Electron 桌面客户端
+# MarkerDeck Electron 桌面客户端
 
 桌面客户端位于 `desktop/electron`，用于生成 Windows x64 完整目录 ZIP。用户只需解压一次，之后可以直接运行目录中的 EXE，不会在每次启动时重新释放 Electron 运行时。
 
@@ -21,6 +21,6 @@ pnpm install --frozen-lockfile
 pnpm run build:win
 ```
 
-构建过程会准备 FFmpeg，并把统一的 `src` 页面和服务端复制到桌面客户端资源目录。发布前会检查 ZIP 内的 `ffmpeg.dll`、`ffmpeg.exe` 和 `node.exe`。
+构建过程会准备 FFmpeg，并把统一的 `src/markerdeck-server.js`、`src/web/markerdeck-launch.html` 和 `src/web/markerdeck-screen.html` 复制到桌面客户端资源目录。发布前会检查 ZIP 内的 `ffmpeg.dll`、`ffmpeg.exe` 和 `node.exe`。
 
 解压后必须保留完整目录，不能只复制主 EXE。Electron 所需的 DLL 和应用资源都位于同一目录中。

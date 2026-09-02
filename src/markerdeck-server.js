@@ -9,21 +9,32 @@ const { spawn } = require("node:child_process");
 const PORT = Number(process.env.PORT || 8765);
 const ROOT = __dirname;
 const WEB_ROOT = path.join(ROOT, "web");
-const DATA_ROOT = process.env.CHROMA_DATA_DIR
-  ? path.resolve(process.env.CHROMA_DATA_DIR)
-  : process.cwd();
-const PRESETS_FILE = process.env.CHROMA_PRESETS_FILE
-  ? path.resolve(process.env.CHROMA_PRESETS_FILE)
-  : path.join(DATA_ROOT, "chroma-presets.json");
-const SETTINGS_FILE = path.join(DATA_ROOT, "chroma-settings.json");
+const DATA_ROOT = process.env.MARKERDECK_DATA_DIR
+  ? path.resolve(process.env.MARKERDECK_DATA_DIR)
+  : process.env.CHROMA_DATA_DIR
+    ? path.resolve(process.env.CHROMA_DATA_DIR)
+    : process.cwd();
+const PRESETS_FILE = process.env.MARKERDECK_PRESETS_FILE
+  ? path.resolve(process.env.MARKERDECK_PRESETS_FILE)
+  : path.join(DATA_ROOT, "markerdeck-presets.json");
+const LEGACY_PRESETS_FILES = [
+  process.env.CHROMA_PRESETS_FILE ? path.resolve(process.env.CHROMA_PRESETS_FILE) : "",
+  path.join(DATA_ROOT, "chroma-presets.json")
+].filter(Boolean);
+const SETTINGS_FILE = path.join(DATA_ROOT, "markerdeck-settings.json");
+const LEGACY_SETTINGS_FILE = path.join(DATA_ROOT, "chroma-settings.json");
 const DEVICE_OFFLINE_MS = 5000;
 const DEFAULT_DEVICE_RETENTION_MS = 10 * 60 * 1000;
 const PAGES = new Set([
-  "chroma-cross-screen.html",
-  "chroma-launch.html"
+  "markerdeck-screen.html",
+  "markerdeck-launch.html"
+]);
+const LEGACY_PAGE_REDIRECTS = new Map([
+  ["/chroma-cross-screen.html", "/markerdeck-screen.html"],
+  ["/chroma-launch.html", "/markerdeck-launch.html"]
 ]);
 
-const LAUNCH_PAGE = "/chroma-launch.html";
+const LAUNCH_PAGE = "/markerdeck-launch.html";
 
 const defaultState = {
   bgColor: "#00ff00",
@@ -95,15 +106,24 @@ function currentLockBroadcast() {
   };
 }
 
-function loadPresets() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(PRESETS_FILE, "utf8"));
-    if (!Array.isArray(parsed)) throw new Error("Preset file must contain an array");
-    return parsed.map((preset, index) => cleanPreset(preset, `saved-${index + 1}`)).filter(Boolean);
-  } catch (error) {
-    if (error.code !== "ENOENT") console.error(`Unable to load presets: ${error.message}`);
-    return defaultPresets.map((preset) => cleanPreset(preset, preset.id));
+function readJsonFromCandidates(files, description) {
+  for (const file of [...new Set(files)]) {
+    try {
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      console.error(`Unable to load ${description} from ${file}: ${error.message}`);
+    }
   }
+  return null;
+}
+
+function loadPresets() {
+  const parsed = readJsonFromCandidates([PRESETS_FILE, ...LEGACY_PRESETS_FILES], "presets");
+  if (Array.isArray(parsed)) {
+    return parsed.map((preset, index) => cleanPreset(preset, `saved-${index + 1}`)).filter(Boolean);
+  }
+  return defaultPresets.map((preset) => cleanPreset(preset, preset.id));
 }
 
 function savePresets() {
@@ -123,13 +143,11 @@ function normalizeDeviceRetentionMs(value) {
 }
 
 function loadSettings() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8"));
+  const parsed = readJsonFromCandidates([SETTINGS_FILE, LEGACY_SETTINGS_FILE], "settings");
+  if (parsed && typeof parsed === "object") {
     return { deviceRetentionMs: normalizeDeviceRetentionMs(parsed.deviceRetentionMs) };
-  } catch (error) {
-    if (error.code !== "ENOENT") console.error(`Unable to load settings: ${error.message}`);
-    return { deviceRetentionMs: DEFAULT_DEVICE_RETENTION_MS };
   }
+  return { deviceRetentionMs: DEFAULT_DEVICE_RETENTION_MS };
 }
 
 function saveSettings() {
@@ -330,7 +348,7 @@ function ffmpegExecutable() {
 }
 
 function makeStaticVideo(png, duration, onProgress = () => {}) {
-  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "chroma-video-"));
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "markerdeck-video-"));
   const inputFile = path.join(temporaryDirectory, "frame.png");
   const outputFile = path.join(temporaryDirectory, "output.mp4");
   fs.writeFileSync(inputFile, png);
@@ -578,9 +596,15 @@ async function handler(req, res) {
     return res.end();
   }
 
+  const legacyPage = LEGACY_PAGE_REDIRECTS.get(url.pathname);
+  if (legacyPage) {
+    res.writeHead(302, { location: `${legacyPage}${url.search}` });
+    return res.end();
+  }
+
   if (url.pathname === "/display" || url.pathname === "/control") {
     const suffix = url.pathname === "/display" ? "?mode=display" : "?mode=control";
-    res.writeHead(302, { location: `/chroma-cross-screen.html${suffix}` });
+    res.writeHead(302, { location: `/markerdeck-screen.html${suffix}` });
     return res.end();
   }
 
@@ -634,7 +658,7 @@ async function handler(req, res) {
     activeVideoJobs += 1;
     try {
       const video = await makeStaticVideo(png, duration);
-      return sendDownload(res, video, "chroma-static.mp4", "video/mp4");
+      return sendDownload(res, video, "markerdeck-static.mp4", "video/mp4");
     } finally {
       activeVideoJobs -= 1;
     }
@@ -672,7 +696,7 @@ async function handler(req, res) {
     if (job.status === "running") return send(res, 409, "Video is still being generated");
     if (job.status === "failed") return send(res, 500, job.error || "Video conversion failed");
     videoJobs.delete(id);
-    return sendDownload(res, job.video, "chroma-static.mp4", "video/mp4");
+    return sendDownload(res, job.video, "markerdeck-static.mp4", "video/mp4");
   }
 
   if (url.pathname === "/api/register" && req.method === "POST") {
@@ -968,7 +992,7 @@ server = http.createServer((req, res) => {
   handler(req, res).catch((error) => send(res, 500, error.stack || String(error)));
 }).listen(PORT, "0.0.0.0", () => {
   const url = `http://${getLanIp()}:${PORT}${LAUNCH_PAGE}`;
-  console.log(`Chroma control server running: ${url}`);
+  console.log(`MarkerDeck 视效标记屏控服务运行: ${url}`);
 });
 
 const deviceCleanupTimer = setInterval(() => {

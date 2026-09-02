@@ -7,10 +7,10 @@ const PORT = Number(process.env.PORT || 8765);
 const ROOT = app.isPackaged
   ? path.join(process.resourcesPath, "server")
   : path.resolve(__dirname, "..", "..", "src");
-const SERVER_FILE = path.join(ROOT, "chroma-control-server.js");
+const SERVER_FILE = path.join(ROOT, "markerdeck-server.js");
 const BUNDLED_NODE = path.join(ROOT, "node-windows", "node.exe");
-const LAUNCH_URL = `http://localhost:${PORT}/chroma-launch.html`;
-const DISPLAY_URL = `http://localhost:${PORT}/chroma-cross-screen.html?mode=display`;
+const LAUNCH_URL = `http://localhost:${PORT}/markerdeck-launch.html`;
+const DISPLAY_URL = `http://localhost:${PORT}/markerdeck-screen.html?mode=display`;
 const LOCK_ACCELERATOR = "CommandOrControl+Alt+Shift+L";
 
 let mainWindow = null;

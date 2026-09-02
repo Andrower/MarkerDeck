@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <title>Chroma 启动页</title>
+  <link rel="icon" href="data:,">
+  <title>MarkerDeck 启动页</title>
   <style>
     :root {
       color-scheme: dark;
@@ -255,8 +256,8 @@
       </div>
 
       <div class="actions">
-        <a class="action primary" id="enterControl" href="/chroma-cross-screen.html?mode=control">进入控制端</a>
-        <a class="action" id="enterDisplay" href="/chroma-cross-screen.html?mode=display">进入被控端</a>
+        <a class="action primary" id="enterControl" href="/markerdeck-screen.html?mode=control">进入控制端</a>
+        <a class="action" id="enterDisplay" href="/markerdeck-screen.html?mode=display">进入被控端</a>
       </div>
 
       <div class="service-actions">
@@ -288,16 +289,16 @@
     qrImage.addEventListener("error", () => qrBox.classList.add("fail"));
 
     function applyUrls(baseUrl) {
-      const root = baseUrl.replace(/\/chroma-launch\.html$/, "");
+      const root = baseUrl.replace(/\/markerdeck-launch\.html$/, "");
       const localRoot = location.protocol.startsWith("http") ? location.origin : root;
-      const controlUrl = `${root}/chroma-cross-screen.html?mode=control`;
-      const displayUrl = `${root}/chroma-cross-screen.html?mode=display`;
+      const controlUrl = `${root}/markerdeck-screen.html?mode=control`;
+      const displayUrl = `${root}/markerdeck-screen.html?mode=display`;
 
       document.getElementById("launchUrl").textContent = baseUrl;
       document.getElementById("controlUrl").textContent = controlUrl;
       document.getElementById("displayUrl").textContent = displayUrl;
-      document.getElementById("enterControl").href = `${localRoot}/chroma-cross-screen.html?mode=control`;
-      document.getElementById("enterDisplay").href = `${localRoot}/chroma-cross-screen.html?mode=display`;
+      document.getElementById("enterControl").href = `${localRoot}/markerdeck-screen.html?mode=control`;
+      document.getElementById("enterDisplay").href = `${localRoot}/markerdeck-screen.html?mode=display`;
       qrImage.src = `/qr.svg?text=${encodeURIComponent(baseUrl)}`;
     }
 
@@ -308,7 +309,7 @@
         const info = await response.json();
         applyUrls(info.url);
       } catch (_) {
-        applyUrls(`${location.origin}/chroma-launch.html`);
+        applyUrls(`${location.origin}/markerdeck-launch.html`);
       }
     }
 

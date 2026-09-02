@@ -10,14 +10,14 @@ const root = path.resolve(__dirname, "..");
 const requiredFiles = [
   "README.md",
   "LICENSE",
-  "src/chroma-control-server.js",
-  "src/web/chroma-cross-screen.html",
-  "src/web/chroma-launch.html",
+  "src/markerdeck-server.js",
+  "src/web/markerdeck-screen.html",
+  "src/web/markerdeck-launch.html",
   "desktop/electron/main.js",
   "desktop/electron/preload.js",
   "desktop/electron/package.json",
-  "platform/macos/start-chroma-server.command",
-  "platform/windows/start-chroma-server.bat"
+  "platform/macos/start-markerdeck-server.command",
+  "platform/windows/start-markerdeck-server.bat"
 ];
 
 requiredFiles.forEach((relativePath) => {
@@ -25,7 +25,7 @@ requiredFiles.forEach((relativePath) => {
 });
 
 const javascriptFiles = [
-  "src/chroma-control-server.js",
+  "src/markerdeck-server.js",
   "desktop/electron/main.js",
   "desktop/electron/preload.js"
 ];
@@ -40,8 +40,8 @@ javascriptFiles.forEach((relativePath) => {
 });
 
 const htmlFiles = [
-  "src/web/chroma-cross-screen.html",
-  "src/web/chroma-launch.html"
+  "src/web/markerdeck-screen.html",
+  "src/web/markerdeck-launch.html"
 ];
 
 htmlFiles.forEach((relativePath) => {
@@ -53,7 +53,7 @@ htmlFiles.forEach((relativePath) => {
   });
 });
 
-const launcherMode = fs.statSync(path.join(root, "platform/macos/start-chroma-server.command")).mode;
+const launcherMode = fs.statSync(path.join(root, "platform/macos/start-markerdeck-server.command")).mode;
 assert.ok((launcherMode & 0o111) !== 0, "macOS launcher must be executable");
 
 console.log("Project structure and syntax checks passed.");

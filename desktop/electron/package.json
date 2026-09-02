@@ -1,9 +1,9 @@
 {
-  "name": "chroma-cross-electron-client",
-  "version": "1.2.0",
+  "name": "markerdeck-electron-client",
+  "version": "1.3.0",
   "private": true,
   "main": "main.js",
-  "description": "Desktop locked client shell for Chroma Cross",
+  "description": "Desktop locked client shell for MarkerDeck",
   "scripts": {
     "start": "electron .",
     "prepare:ffmpeg:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../platform/windows/prepare-ffmpeg.ps1",
@@ -14,9 +14,9 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "local.chroma.cross.client",
-    "productName": "Chroma Cross Video Client",
-    "artifactName": "Chroma.Cross.Client.${version}.${ext}",
+    "appId": "local.markerdeck.client",
+    "productName": "MarkerDeck",
+    "artifactName": "MarkerDeck.Client.${version}.${ext}",
     "files": [
       "main.js",
       "preload.js"
@@ -26,7 +26,7 @@
         "from": "../../src",
         "to": "server",
         "filter": [
-          "chroma-control-server.js",
+          "markerdeck-server.js",
           "web/**"
         ]
       },

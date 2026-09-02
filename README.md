@@ -1,6 +1,6 @@
-# Chroma Cross
+# MarkerDeck
 
-Chroma Cross 是一套用于影视拍摄与后期跟踪的局域网投放工具。它可以在手机、平板或电脑上显示纯色背景与可调十字跟踪点，并允许控制端统一管理多台投放设备。
+MarkerDeck 是一套用于影视拍摄与后期跟踪的局域网多屏纯色/跟踪点投放控制工具。它可以在手机、平板或电脑上显示纯色背景与可调十字跟踪点，并允许控制端统一管理多台投放设备。
 
 ## 主要功能
 
@@ -21,26 +21,26 @@ Chroma Cross 是一套用于影视拍摄与后期跟踪的局域网投放工具�
 
 | 版本 | 系统 | 说明 | 下载 |
 | --- | --- | --- | --- |
-| 最新版 | Windows x64 桌面客户端 | 解压一次后运行，内置 Node.js 与 FFmpeg | [下载 Windows 版](https://github.com/Andrower/chroma-cross-platform/releases/latest) |
-| 最新版 | Windows x64 浏览器服务端 | 解压后运行批处理文件，内置 Node.js 与 FFmpeg | [下载 Windows 服务端](https://github.com/Andrower/chroma-cross-platform/releases/latest) |
-| 最新版 | macOS Apple Silicon | 解压后运行，适用于 arm64 机型 | [下载 Mac 版](https://github.com/Andrower/chroma-cross-platform/releases/latest) |
+| 最新版 | Windows x64 桌面客户端 | 解压一次后运行，内置 Node.js 与 FFmpeg | [下载 Windows 版](https://github.com/Andrower/MarkerDeck/releases/latest) |
+| 最新版 | Windows x64 浏览器服务端 | 解压后运行批处理文件，内置 Node.js 与 FFmpeg | [下载 Windows 服务端](https://github.com/Andrower/MarkerDeck/releases/latest) |
+| 最新版 | macOS Apple Silicon | 解压后运行，适用于 arm64 机型 | [下载 Mac 版](https://github.com/Andrower/MarkerDeck/releases/latest) |
 
-全部历史版本可在 [GitHub Releases](https://github.com/Andrower/chroma-cross-platform/releases) 中查看和回滚。
+全部历史版本可在 [GitHub Releases](https://github.com/Andrower/MarkerDeck/releases) 中查看和回滚。
 
 ## 快速开始
 
 ### Windows
 
-1. 下载 `Chroma.Cross.Client.<版本号>.zip` 并完整解压。
-2. 双击解压目录中的 `Chroma Cross Video Client.exe`。
+1. 下载 `MarkerDeck.Client.<版本号>.zip` 并完整解压。
+2. 双击解压目录中的 `MarkerDeck.exe`。
 3. 不要把 EXE 单独移出目录；`ffmpeg.dll`、Node.js 和 FFmpeg 必须和程序目录一起保留。
 
-浏览器服务端包使用 `chroma-cross-windows-x64-v<版本号>.zip`，解压后双击 `start-chroma-server.bat`。
+浏览器服务端包使用 `markerdeck-windows-x64-v<版本号>.zip`，解压后双击 `start-markerdeck-server.bat`。
 
 ### macOS
 
 1. 解压下载的 ZIP。
-2. 双击 `mac/start-chroma-server.command`。
+2. 双击 `start-markerdeck-server.command`。
 3. 首次启动如遇系统安全提示，请右键该文件并选择“打开”。
 4. 保持终端窗口运行。
 
@@ -55,8 +55,10 @@ Chroma Cross 是一套用于影视拍摄与后期跟踪的局域网投放工具�
 默认电脑入口为：
 
 ```text
-http://localhost:8765/chroma-launch.html
+http://localhost:8765/markerdeck-launch.html
 ```
+
+正式页面名为 `markerdeck-launch.html`（启动页）和 `markerdeck-screen.html`（控制端与投放端页面）。
 
 手机必须使用启动页显示的局域网 IP 地址，不能使用 `localhost` 或 `127.0.0.1`。
 
@@ -83,6 +85,10 @@ http://localhost:8765/chroma-launch.html
 - 设备状态、控制指令和预设不需要上传到第三方云服务。
 - 请不要把服务端口直接暴露到公网。
 
+## 旧版本兼容
+
+v1.3.0 保留旧版 Chroma Cross 的迁移兼容：旧的 `/chroma-launch.html` 和 `/chroma-cross-screen.html` URL 会返回 302，并保留查询参数；服务端在新数据文件不存在时会回退读取 `CHROMA_*` 环境变量以及 `chroma-settings.json`、`chroma-presets.json`。页面读取旧的 `chromaCross*` 浏览器存储键后会写入新的 `markerdeck*` 键。之后通过 MarkerDeck 保存设置或预设时，会使用新的 `markerdeck-*` 文件名。
+
 ## 开发与构建
 
 项目主要由原生 HTML/CSS/JavaScript、Node.js 本地服务和 Electron Windows 客户端组成。
@@ -99,6 +105,8 @@ npm start
 npm run check
 npm run package:mac
 ```
+
+macOS 发布包名为 `markerdeck-macos-arm64-v<版本号>.zip`，Windows 浏览器服务端发布包名为 `markerdeck-windows-x64-v<版本号>.zip`。
 
 更多说明：
 

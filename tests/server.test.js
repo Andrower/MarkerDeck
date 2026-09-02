@@ -9,7 +9,15 @@ const { after, before, test } = require("node:test");
 const root = path.resolve(__dirname, "..");
 const port = 18000 + (process.pid % 10000);
 const origin = `http://127.0.0.1:${port}`;
-const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "chroma-test-"));
+const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "markerdeck-test-"));
+const legacyPresetsFile = path.join(dataDirectory, "chroma-presets.json");
+const legacySettingsFile = path.join(dataDirectory, "chroma-settings.json");
+fs.writeFileSync(legacyPresetsFile, JSON.stringify([{
+  id: "legacy-preset",
+  name: "迁移兼容预设",
+  state: { bgColor: "#135790", crossColor: "#2468ac" }
+}], null, 2), "utf8");
+fs.writeFileSync(legacySettingsFile, JSON.stringify({ deviceRetentionMs: 60 * 1000 }, null, 2), "utf8");
 let serverProcess;
 let serverOutput = "";
 
@@ -100,12 +108,12 @@ function openSseConnection(role, sessionId, pageInstanceId = "") {
 }
 
 before(async () => {
-  serverProcess = spawn(process.execPath, [path.join(root, "src/chroma-control-server.js")], {
+  serverProcess = spawn(process.execPath, [path.join(root, "src/markerdeck-server.js")], {
     cwd: root,
     env: {
       ...process.env,
       PORT: String(port),
-      CHROMA_DATA_DIR: dataDirectory
+      MARKERDECK_DATA_DIR: dataDirectory
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -123,25 +131,56 @@ after(async () => {
 });
 
 test("serves launch and control pages", async () => {
-  const launch = await fetch(`${origin}/chroma-launch.html`);
+  const launch = await fetch(`${origin}/markerdeck-launch.html`);
   assert.equal(launch.status, 200);
   assert.match(await launch.text(), /控制端网址/);
 
-  const control = await fetch(`${origin}/chroma-cross-screen.html?mode=control`);
+  const control = await fetch(`${origin}/markerdeck-screen.html?mode=control`);
   assert.equal(control.status, 200);
   assert.match(await control.text(), /设备管理/);
+});
+
+test("redirects legacy page URLs while preserving mode query parameters", async () => {
+  const redirects = [
+    ["/chroma-launch.html?mode=control", "/markerdeck-launch.html?mode=control"],
+    ["/chroma-cross-screen.html?mode=display", "/markerdeck-screen.html?mode=display"]
+  ];
+  for (const [legacyPath, expectedLocation] of redirects) {
+    const response = await fetch(`${origin}${legacyPath}`, { redirect: "manual" });
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), expectedLocation);
+  }
 });
 
 test("returns server information and QR code", async () => {
   const { response, body } = await jsonRequest("/api/info");
   assert.equal(response.status, 200);
   assert.equal(body.port, port);
-  assert.match(body.url, /chroma-launch\.html$/);
+  assert.match(body.url, /markerdeck-launch\.html$/);
 
   const qr = await fetch(`${origin}/qr.svg?text=${encodeURIComponent(body.url)}`);
   assert.equal(qr.status, 200);
   assert.match(qr.headers.get("content-type"), /image\/svg\+xml/);
   assert.match(await qr.text(), /^<svg/);
+});
+
+test("loads legacy presets and settings during the MarkerDeck migration", async () => {
+  const presets = await jsonRequest("/api/presets");
+  const migratedPreset = presets.body.presets.find((preset) => preset.id === "legacy-preset");
+  assert.ok(migratedPreset);
+  assert.equal(migratedPreset.name, "迁移兼容预设");
+  assert.equal(migratedPreset.state.bgColor, "#135790");
+
+  const settings = await jsonRequest("/api/device-settings");
+  assert.equal(settings.body.deviceRetentionMs, 60 * 1000);
+
+  const settingsUpdate = await jsonRequest("/api/device-settings", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceRetentionMs: 60 * 1000 })
+  });
+  assert.equal(settingsUpdate.body.deviceRetentionMs, 60 * 1000);
+  assert.ok(fs.existsSync(path.join(dataDirectory, "markerdeck-settings.json")));
 });
 
 test("updates state and registers a named device", async () => {
@@ -336,7 +375,7 @@ test("persists and deletes a custom preset", async () => {
   });
   assert.equal(created.response.status, 200);
   assert.equal(created.body.preset.name, "自动测试预设");
-  assert.ok(fs.existsSync(path.join(dataDirectory, "chroma-presets.json")));
+  assert.ok(fs.existsSync(path.join(dataDirectory, "markerdeck-presets.json")));
 
   const deleted = await jsonRequest("/api/presets/delete", {
     method: "POST",

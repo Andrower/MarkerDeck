@@ -2,15 +2,17 @@
 setlocal
 set "SCRIPT_DIR=%~dp0"
 
-if exist "%SCRIPT_DIR%app\chroma-control-server.js" (
+if exist "%SCRIPT_DIR%app\markerdeck-server.js" (
   set "APP_DIR=%SCRIPT_DIR%app"
   set "RUNTIME_DIR=%SCRIPT_DIR%runtime"
-  if "%CHROMA_DATA_DIR%"=="" set "CHROMA_DATA_DIR=%SCRIPT_DIR%data"
+  if "%MARKERDECK_DATA_DIR%"=="" if not "%CHROMA_DATA_DIR%"=="" set "MARKERDECK_DATA_DIR=%CHROMA_DATA_DIR%"
+  if "%MARKERDECK_DATA_DIR%"=="" set "MARKERDECK_DATA_DIR=%SCRIPT_DIR%data"
 ) else (
   for %%I in ("%SCRIPT_DIR%..\..") do set "REPO_ROOT=%%~fI"
   set "APP_DIR=%REPO_ROOT%\src"
   set "RUNTIME_DIR=%REPO_ROOT%\runtime\windows"
-  if "%CHROMA_DATA_DIR%"=="" set "CHROMA_DATA_DIR=%REPO_ROOT%\.data"
+  if "%MARKERDECK_DATA_DIR%"=="" if not "%CHROMA_DATA_DIR%"=="" set "MARKERDECK_DATA_DIR=%CHROMA_DATA_DIR%"
+  if "%MARKERDECK_DATA_DIR%"=="" set "MARKERDECK_DATA_DIR=%REPO_ROOT%\.data"
 )
 
 cd /d "%APP_DIR%"
@@ -41,17 +43,27 @@ if exist "%FFMPEG_EXE%" (
   )
 )
 
-if not exist "%APP_DIR%\chroma-control-server.js" (
+if not exist "%APP_DIR%\markerdeck-server.js" (
+  echo Missing application files in %APP_DIR%.
+  pause
+  exit /b 1
+)
+if not exist "%APP_DIR%\web\markerdeck-screen.html" (
+  echo Missing application files in %APP_DIR%.
+  pause
+  exit /b 1
+)
+if not exist "%APP_DIR%\web\markerdeck-launch.html" (
   echo Missing application files in %APP_DIR%.
   pause
   exit /b 1
 )
 
-set LAUNCH_URL=http://localhost:%PORT%/chroma-launch.html
-set CONTROL_URL=http://localhost:%PORT%/chroma-cross-screen.html?mode=control
-set DISPLAY_URL=http://localhost:%PORT%/chroma-cross-screen.html?mode=display
+set LAUNCH_URL=http://localhost:%PORT%/markerdeck-launch.html
+set CONTROL_URL=http://localhost:%PORT%/markerdeck-screen.html?mode=control
+set DISPLAY_URL=http://localhost:%PORT%/markerdeck-screen.html?mode=display
 
-echo Chroma Cross Server
+echo MarkerDeck 视效标记屏控服务
 echo Launch URL: %LAUNCH_URL%
 echo Control URL: %CONTROL_URL%
 echo Display URL: %DISPLAY_URL%
@@ -65,5 +77,5 @@ echo Press Control-C to stop the service.
 echo.
 
 start "" "%LAUNCH_URL%"
-"%NODE_EXE%" "%APP_DIR%\chroma-control-server.js"
+"%NODE_EXE%" "%APP_DIR%\markerdeck-server.js"
 pause

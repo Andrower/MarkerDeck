@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "1.2.0",
+  [string]$Version = "1.3.0",
   [string]$ArtifactDirectory
 )
 
@@ -9,15 +9,15 @@ if (-not $ArtifactDirectory) {
   $ArtifactDirectory = Join-Path $root "artifacts"
 }
 $ArtifactDirectory = [System.IO.Path]::GetFullPath($ArtifactDirectory)
-$packageName = "chroma-cross-windows-x64-v$Version"
-$stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("chroma-windows-" + [guid]::NewGuid().ToString("N"))
+$packageName = "markerdeck-windows-x64-v$Version"
+$stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("markerdeck-windows-" + [guid]::NewGuid().ToString("N"))
 $packageDirectory = Join-Path $stagingRoot $packageName
 $archive = Join-Path $ArtifactDirectory "$packageName.zip"
 
 try {
   New-Item -ItemType Directory -Force (Join-Path $packageDirectory "app"), (Join-Path $packageDirectory "runtime\node-windows"), $ArtifactDirectory | Out-Null
   Copy-Item -Path (Join-Path $root "src\*") -Destination (Join-Path $packageDirectory "app") -Recurse -Force
-  Copy-Item -Path (Join-Path $root "platform\windows\start-chroma-server.bat") -Destination $packageDirectory -Force
+  Copy-Item -Path (Join-Path $root "platform\windows\start-markerdeck-server.bat") -Destination $packageDirectory -Force
   Copy-Item -Path (Join-Path $root "docs\windows.md") -Destination (Join-Path $packageDirectory "README.md") -Force
 
   $nodeSource = $env:NODE_WINDOWS_BIN
