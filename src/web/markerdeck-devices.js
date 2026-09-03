@@ -647,8 +647,10 @@
     if (!targets.length) return;
     const result = await app.api.sendLockCommand(targets.map((device) => device.id), enabled);
     app.projection.showLockCommandStatus(result);
-    if (state.selectedDeviceId) await loadDeviceState(state.selectedDeviceId);
-    await loadDevices();
+    await Promise.allSettled([
+      state.selectedDeviceId ? loadDeviceState(state.selectedDeviceId) : Promise.resolve(),
+      loadDevices()
+    ]);
   }
 
   app.devices = {

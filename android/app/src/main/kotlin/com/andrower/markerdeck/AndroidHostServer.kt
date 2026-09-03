@@ -21,6 +21,8 @@ class AndroidHostServer(
     private val staticAssets = mapOf(
         "/markerdeck-screen.html" to Asset("markerdeck-screen.html", "text/html; charset=utf-8"),
         "/markerdeck-launch.html" to Asset("markerdeck-launch.html", "text/html; charset=utf-8"),
+        "/markerdeck-visual-state.js" to Asset("markerdeck-visual-state.js", "text/javascript; charset=utf-8"),
+        "/markerdeck-control-interaction.js" to Asset("markerdeck-control-interaction.js", "text/javascript; charset=utf-8"),
         "/markerdeck-base.css" to Asset("markerdeck-base.css", "text/css; charset=utf-8"),
         "/markerdeck-control.css" to Asset("markerdeck-control.css", "text/css; charset=utf-8"),
         "/markerdeck-mobile.css" to Asset("markerdeck-mobile.css", "text/css; charset=utf-8"),
@@ -159,6 +161,7 @@ class AndroidHostServer(
                     .put("name", result.name)
                     .put("state", hostStateToJson(result.state))
                     .put("globalLockCommandId", result.globalLockCommandId)
+                    .put("globalLockCommand", result.globalLockCommand)
             )
         }
 
@@ -348,7 +351,10 @@ class AndroidHostServer(
     private fun publishLockDelivery(delivery: HostLockDelivery) {
         sseHub.publish(
             event = "lock-command",
-            data = JSONObject().put("commandId", delivery.commandId).put("enabled", delivery.enabled),
+            data = JSONObject()
+                .put("commandId", delivery.commandId)
+                .put("enabled", delivery.enabled)
+                .put("global", delivery.global),
             role = "display",
             targetSessionIds = delivery.targetSessionIds
         )
@@ -376,6 +382,7 @@ class AndroidHostServer(
         if (contentLength != null && contentLength > MARKERDECK_HOST_MAX_BODY_BYTES) {
             throw BadRequest("Request body too large")
         }
+        ensureJsonUsesUtf8(session)
         val files = HashMap<String, String>()
         try {
             session.parseBody(files)
@@ -390,6 +397,22 @@ class AndroidHostServer(
             JSONObject(raw)
         } catch (_: Exception) {
             throw BadRequest("Invalid JSON body")
+        }
+    }
+
+    private fun ensureJsonUsesUtf8(session: NanoHTTPD.IHTTPSession) {
+        val contentTypeEntry = session.getHeaders().entries.firstOrNull { (key, _) ->
+            key.equals("content-type", ignoreCase = true)
+        } ?: return
+        val contentType = contentTypeEntry.value.trim()
+        val mediaType = contentType.substringBefore(';').trim()
+        val isJson = mediaType.equals("application/json", ignoreCase = true) ||
+            mediaType.endsWith("+json", ignoreCase = true)
+        val hasCharset = contentType.split(';').drop(1).any { parameter ->
+            parameter.trim().startsWith("charset=", ignoreCase = true)
+        }
+        if (isJson && !hasCharset) {
+            session.getHeaders()[contentTypeEntry.key] = "$contentType; charset=UTF-8"
         }
     }
 

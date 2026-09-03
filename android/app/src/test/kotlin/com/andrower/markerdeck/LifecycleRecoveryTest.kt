@@ -97,6 +97,30 @@ class LifecycleRecoveryTest {
     }
 
     @Test
+    fun overridesBrightnessOnlyForActiveProjectionSurfaces() {
+        assertEquals(
+            PROJECTION_SCREEN_BRIGHTNESS,
+            projectionWindowScreenBrightness(true, AndroidWebMode.REMOTE_DISPLAY),
+            0.0f
+        )
+        assertEquals(
+            PROJECTION_SCREEN_BRIGHTNESS,
+            projectionWindowScreenBrightness(true, AndroidWebMode.LOCAL_PROJECTION),
+            0.0f
+        )
+        assertEquals(
+            PROJECTION_SCREEN_BRIGHTNESS_NONE,
+            projectionWindowScreenBrightness(true, AndroidWebMode.HOST_CONTROL),
+            0.0f
+        )
+        assertEquals(
+            PROJECTION_SCREEN_BRIGHTNESS_NONE,
+            projectionWindowScreenBrightness(false, AndroidWebMode.REMOTE_DISPLAY),
+            0.0f
+        )
+    }
+
+    @Test
     fun validatesAndNormalizesOnlyExplicitSavedProjection() {
         assertEquals(
             SavedProjection("https://markerdeck.local:443", "Entrance Screen"),

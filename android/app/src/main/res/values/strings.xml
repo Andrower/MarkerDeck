@@ -24,6 +24,17 @@
     <string name="service_address_label">MarkerDeck 服务地址</string>
     <string name="service_address_hint">例如 192.168.1.2:8765</string>
     <string name="service_address_helper">可输入 IP、IP:端口、localhost:端口或完整 HTTP(S) 地址。</string>
+    <string name="scan_qr_code">扫描二维码</string>
+    <string name="qr_scan_prompt">将 MarkerDeck 宿主二维码放入取景框</string>
+    <string name="qr_scan_requesting_permission">正在请求相机权限&#8230;</string>
+    <string name="qr_scan_scanning">正在打开扫码相机&#8230;</string>
+    <string name="qr_scan_success">已填入宿主地址：%1$s。请点击“连接并开始投放”确认。</string>
+    <string name="qr_scan_cancelled">已取消扫码，地址未改变。</string>
+    <string name="qr_scan_empty">未读取到二维码内容，地址未改变。</string>
+    <string name="qr_scan_invalid">二维码不是有效的 MarkerDeck HTTP(S) 宿主地址，地址未改变。</string>
+    <string name="qr_scan_failed">扫描二维码失败，地址未改变，请重试。</string>
+    <string name="qr_scan_permission_denied">未获得相机权限，地址未改变。请允许相机权限后重试。</string>
+    <string name="qr_scan_no_camera">当前设备没有可用相机，地址未改变。</string>
     <string name="discovery_label">局域网宿主</string>
     <string name="discovery_idle">正在准备局域网发现。</string>
     <string name="discovery_scanning">正在扫描局域网 MarkerDeck 宿主&#8230;</string>

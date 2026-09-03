@@ -49,6 +49,42 @@ class HostProtocolTest {
         assertEquals("自定义", preset?.name)
         assertEquals("#123456", preset?.state?.get("bgColor"))
         assertFalse(preset?.state?.containsKey("unexpected") == true)
+        assertEquals("100", preset?.state?.get("bgBrightness"))
+        assertEquals("100", preset?.state?.get("crossBrightness"))
+        assertEquals("100", preset?.state?.get("overallBrightness"))
         assertEquals(8, defaultHostPresets().size)
+        assertEquals("#009900", defaultHostPresets()[1].state["bgColor"])
+        assertEquals("#004d00", defaultHostPresets()[2].state["bgColor"])
+        assertEquals("#002682", defaultHostPresets()[4].state["bgColor"])
+        assertEquals("#001341", defaultHostPresets()[5].state["bgColor"])
+    }
+
+    @Test
+    fun canonicalizesLegacyBrightnessAndIsIdempotent() {
+        val legacy = normalizeHostState(
+            mapOf(
+                "bgColor" to "#135790",
+                "bgBrightness" to "60",
+                "crossColor" to "#2468ac",
+                "crossBrightness" to "30",
+                "overallBrightness" to "50.4"
+            )
+        )
+
+        assertEquals("#0b3456", legacy["bgColor"])
+        assertEquals("#0b1f34", legacy["crossColor"])
+        assertEquals("100", legacy["bgBrightness"])
+        assertEquals("100", legacy["crossBrightness"])
+        assertEquals("50", legacy["overallBrightness"])
+        assertEquals(legacy, normalizeHostState(legacy))
+    }
+
+    @Test
+    fun normalizesOverallBrightnessWithABackwardCompatibleDefault() {
+        assertEquals("100", normalizeOverallBrightness(null))
+        assertEquals("50", normalizeOverallBrightness("50.4"))
+        assertEquals("0", normalizeOverallBrightness(-20))
+        assertEquals("100", normalizeOverallBrightness(120))
+        assertEquals("100", normalizeHostState(mapOf("bgColor" to "#123456"))["overallBrightness"])
     }
 }

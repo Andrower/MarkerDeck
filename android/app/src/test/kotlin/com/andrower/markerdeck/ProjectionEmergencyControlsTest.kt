@@ -110,6 +110,51 @@ class ProjectionEmergencyControlsTest {
     }
 
     @Test
+    fun controlInteractionPausesTimeoutAndResumesAfterItEnds() {
+        val shown = reduceProjectionEmergencyControls(
+            current = ProjectionEmergencyControlsState(),
+            event = ProjectionEmergencyControlEvent.SHOW_REQUESTED_WITH_RELOCK,
+            projectionActive = true
+        )
+        val started = reduceProjectionEmergencyControls(
+            current = shown.state,
+            event = ProjectionEmergencyControlEvent.CONTROL_INTERACTION_STARTED,
+            projectionActive = true
+        )
+        val timedOutDuringInteraction = reduceProjectionEmergencyControls(
+            current = started.state,
+            event = ProjectionEmergencyControlEvent.TIMEOUT,
+            projectionActive = true
+        )
+        val ended = reduceProjectionEmergencyControls(
+            current = started.state,
+            event = ProjectionEmergencyControlEvent.CONTROL_INTERACTION_ENDED,
+            projectionActive = true
+        )
+
+        assertTrue(started.state.visible)
+        assertTrue(started.state.interactionActive)
+        assertFalse(started.state.hasTimeout())
+        assertEquals(started.state, timedOutDuringInteraction.state)
+        assertFalse(timedOutDuringInteraction.shouldRelockProjection)
+        assertFalse(ended.state.interactionActive)
+        assertTrue(ended.state.hasTimeout())
+    }
+
+    @Test
+    fun interactionEventsDoNotShowOrKeepTimeoutForHiddenControls() {
+        val started = reduceProjectionEmergencyControls(
+            current = ProjectionEmergencyControlsState(),
+            event = ProjectionEmergencyControlEvent.CONTROL_INTERACTION_STARTED,
+            projectionActive = true
+        )
+
+        assertFalse(started.state.visible)
+        assertFalse(started.state.interactionActive)
+        assertFalse(started.state.hasTimeout())
+    }
+
+    @Test
     fun hideAndProjectionStopCancelVisibleControlsWithoutRelock() {
         val hidden = reduceProjectionEmergencyControls(
             current = ProjectionEmergencyControlsState(visible = true),

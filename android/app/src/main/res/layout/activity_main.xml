@@ -197,6 +197,29 @@
                 android:textColor="@color/markerdeck_muted"
                 android:textSize="12sp" />
 
+            <Button
+                android:id="@+id/scanQrButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/markerdeck_secondary_button"
+                android:minHeight="52dp"
+                android:text="@string/scan_qr_code"
+                android:textAllCaps="false"
+                android:textColor="@color/markerdeck_foreground"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                tools:ignore="ButtonStyle" />
+
+            <TextView
+                android:id="@+id/qrScanStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="@color/markerdeck_muted"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

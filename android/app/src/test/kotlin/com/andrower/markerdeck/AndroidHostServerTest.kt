@@ -24,7 +24,13 @@ class AndroidHostServerTest {
             requestedPort = 0,
             store = MarkerDeckHostStateStore(),
             sseHub = sseHub,
-            assetReader = { name -> if (name == "markerdeck-screen.html") "<html>screen</html>".toByteArray() else null },
+            assetReader = { name ->
+                when (name) {
+                    "markerdeck-screen.html" -> "<html>screen</html>".toByteArray()
+                    "markerdeck-visual-state.js" -> "visual".toByteArray()
+                    else -> null
+                }
+            },
             ipProvider = { "127.0.0.1" }
         )
         server.start()
@@ -53,13 +59,21 @@ class AndroidHostServerTest {
         assertEquals(200, asset.first)
         assertTrue(asset.second.contains("screen"))
 
+        val visualAsset = request("/markerdeck-visual-state.js")
+        assertEquals(200, visualAsset.first)
+        assertEquals("visual", visualAsset.second)
+
         val registration = request(
             path = "/api/register",
             method = "POST",
-            body = """{"id":"session-1","sessionId":"session-1","deviceId":"device-1","pageInstanceId":"page-1","name":"Test screen","role":"display"}"""
+            body = """{"id":"session-1","sessionId":"session-1","deviceId":"device-1","pageInstanceId":"page-1","name":"中文投放屏","role":"display"}"""
         )
         assertEquals(200, registration.first)
-        assertEquals("session-1", JSONObject(registration.second).getString("sessionId"))
+        val registrationJson = JSONObject(registration.second)
+        assertEquals("session-1", registrationJson.getString("sessionId"))
+        assertEquals("中文投放屏", registrationJson.getString("name"))
+        assertEquals("100", registrationJson.getJSONObject("state").getString("overallBrightness"))
+        assertEquals("none", registrationJson.getString("globalLockCommand"))
 
         val state = request(
             path = "/api/state?deviceId=session-1",
@@ -69,6 +83,28 @@ class AndroidHostServerTest {
         assertEquals(200, state.first)
         val fetched = request("/api/state?deviceId=session-1")
         assertEquals("#abcdef", JSONObject(fetched.second).getString("bgColor"))
+    }
+
+    @Test
+    fun preservesUtf8ChineseNameThroughDeviceNameHttpEndpoint() {
+        val registration = request(
+            path = "/api/register",
+            method = "POST",
+            body = """{"id":"name-session","sessionId":"name-session","deviceId":"name-device","name":"入口屏幕一号","role":"display"}"""
+        )
+        assertEquals(200, registration.first)
+        assertEquals("入口屏幕一号", JSONObject(registration.second).getString("name"))
+
+        val renamed = request(
+            path = "/api/device-name",
+            method = "POST",
+            body = """{"id":"name-session","name":"入口屏幕二号"}"""
+        )
+        assertEquals(200, renamed.first)
+        assertEquals("入口屏幕二号", JSONObject(renamed.second).getString("name"))
+
+        val devices = JSONObject(request("/api/devices").second).getJSONArray("devices")
+        assertEquals("入口屏幕二号", devices.getJSONObject(0).getString("name"))
     }
 
     @Test
@@ -117,11 +153,11 @@ class AndroidHostServerTest {
         if (body != null) {
             connection.doOutput = true
             connection.setRequestProperty("content-type", "application/json")
-            connection.outputStream.use { it.write(body.toByteArray()) }
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
         }
         val status = connection.responseCode
         val stream = if (status >= 400) connection.errorStream else connection.inputStream
-        val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        val response = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
         connection.disconnect()
         return status to response
     }

@@ -11,8 +11,8 @@ android {
         applicationId = "com.andrower.markerdeck"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.4.0"
+        versionCode = 3
+        versionName = "1.5.0"
     }
 
     buildTypes {
@@ -46,10 +46,12 @@ kotlin {
 }
 
 dependencies {
+    implementation("androidx.activity:activity:1.10.1")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     testImplementation("junit:junit:4.13.2")
     // JVM tests must use the real implementation instead of android.jar stubs.
     testImplementation("org.json:json:20240303")

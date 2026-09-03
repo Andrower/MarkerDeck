@@ -3,6 +3,7 @@
 
   const app = global.MarkerDeck = global.MarkerDeck || {};
   const byId = (id) => document.getElementById(id);
+  const visualState = app.visualState;
 
   const dom = {
     canvas: byId("stage"),
@@ -65,6 +66,7 @@
     presetGrid: byId("presets"),
     mobileCurrentPresetSwatch: byId("mobileCurrentPresetSwatch"),
     mobileCurrentPresetName: byId("mobileCurrentPresetName"),
+    mobilePresetBar: byId("mobilePresetBar"),
     mobilePresetSheet: byId("mobilePresetSheet"),
     mobilePresetTarget: byId("mobilePresetTarget"),
     mobileRecentPresetGroup: byId("mobileRecentPresetGroup"),
@@ -83,9 +85,8 @@
   };
   dom.controls = {
     bgColor: byId("bgColor"),
-    bgBrightness: byId("bgBrightness"),
+    overallBrightness: byId("overallBrightness"),
     crossColor: byId("crossColor"),
-    crossBrightness: byId("crossBrightness"),
     crossSize: byId("crossSize"),
     crossThickness: byId("crossThickness"),
     edgeRatio: byId("edgeRatio"),
@@ -93,8 +94,7 @@
     randomPointCount: byId("randomPointCount")
   };
   const outputIds = [
-    "bgBrightness",
-    "crossBrightness",
+    "overallBrightness",
     "crossSize",
     "crossThickness",
     "edgeRatio",
@@ -123,20 +123,7 @@
     favoritePresets: "chromaCrossFavoritePresets"
   });
 
-  function hexToRgb(hex) {
-    const value = hex.replace("#", "");
-    return {
-      r: parseInt(value.slice(0, 2), 16),
-      g: parseInt(value.slice(2, 4), 16),
-      b: parseInt(value.slice(4, 6), 16)
-    };
-  }
-
-  function colorWithBrightness(hex, brightness) {
-    const rgb = hexToRgb(hex);
-    const level = Number(brightness) / 100;
-    return `rgb(${Math.round(rgb.r * level)}, ${Math.round(rgb.g * level)}, ${Math.round(rgb.b * level)})`;
-  }
+  const colorWithBrightness = visualState.colorWithBrightness;
 
   function readStorageWithLegacy(storage, key, legacyKey) {
     const value = storage.getItem(key);
@@ -228,11 +215,12 @@
   }
 
   function readState() {
-    return {
+    return visualState.canonicalizeState({
       bgColor: dom.controls.bgColor.value,
-      bgBrightness: dom.controls.bgBrightness.value,
+      bgBrightness: String(visualState.DEFAULT_LEGACY_BRIGHTNESS),
+      overallBrightness: visualState.normalizeOverallBrightness(dom.controls.overallBrightness.value),
       crossColor: dom.controls.crossColor.value,
-      crossBrightness: dom.controls.crossBrightness.value,
+      crossBrightness: String(visualState.DEFAULT_LEGACY_BRIGHTNESS),
       crossSize: dom.controls.crossSize.value,
       crossThickness: dom.controls.crossThickness.value,
       edgeRatio: dom.controls.edgeRatio.value,
@@ -241,7 +229,7 @@
       randomPoints: document.body.dataset.randomPoints || "0",
       randomSeed: document.body.dataset.randomSeed || "",
       randomPointCount: dom.controls.randomPointCount.value
-    };
+    });
   }
 
   function currentStateWithFlags() {
@@ -259,10 +247,18 @@
   }
 
   function setState(next) {
+    const incoming = visualState.canonicalizeState({
+      ...readState(),
+      ...(next || {})
+    });
     state.applyingRemote = true;
     try {
-      Object.entries(next || {}).forEach(([key, value]) => {
-        if (dom.controls[key] && value !== undefined) dom.controls[key].value = value;
+      Object.entries(incoming).forEach(([key, value]) => {
+        if (dom.controls[key] && value !== undefined) {
+          dom.controls[key].value = key === "overallBrightness"
+            ? visualState.normalizeOverallBrightness(value)
+            : value;
+        }
         if (key === "hideCross" && value !== undefined) {
           document.body.dataset.hideCross = String(value === "1" || value === 1 || value === true ? "1" : "0");
         }
@@ -276,6 +272,7 @@
     } finally {
       state.applyingRemote = false;
     }
+    return incoming;
   }
 
   function makeRandomSeed() {
@@ -372,9 +369,13 @@
     readState,
     currentStateWithFlags,
     setState,
+    normalizeVisualState: visualState.normalizeVisualState,
+    canonicalizeState: visualState.canonicalizeState,
     makeRandomSeed,
     updateStatus,
     applyCapabilities,
+    effectiveBrightnessPercent: visualState.effectiveBrightnessPercent,
+    normalizeOverallBrightness: visualState.normalizeOverallBrightness,
     isTextEditingTarget,
     initInputGuards
   };

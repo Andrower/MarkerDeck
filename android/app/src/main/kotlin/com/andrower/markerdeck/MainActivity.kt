@@ -1,7 +1,6 @@
 package com.andrower.markerdeck
 
 import android.Manifest
-import android.app.Activity
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.KeyguardManager
@@ -42,6 +41,11 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanIntentResult
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +54,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     companion object {
         private const val CAPABILITY_WARNING_DURATION_MS = 4_000L
         private const val STATE_PROJECTION_ACTIVE = "projection_active"
@@ -70,6 +74,8 @@ class MainActivity : Activity() {
     private lateinit var settingsContentBasePadding: SettingsContentPadding
     private lateinit var displayScreen: View
     private lateinit var serviceAddressInput: EditText
+    private lateinit var scanQrButton: Button
+    private lateinit var qrScanStatusText: TextView
     private lateinit var deviceNameInput: EditText
     private lateinit var discoveryStatus: TextView
     private lateinit var discoveryHostsList: LinearLayout
@@ -135,6 +141,22 @@ class MainActivity : Activity() {
     private var lockScreenPermissionGuideStateLoaded = false
     private var lockScreenPermissionGuideHandled = false
     private var lockScreenPermissionGuideShownThisActivity = false
+    private var qrScanInFlight = false
+
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            launchQrScanner()
+        } else {
+            finishQrScan(QrScanUiStatus.PERMISSION_DENIED)
+        }
+    }
+
+    private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
+        finishQrScan()
+        handleQrScanResult(result)
+    }
 
     private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -227,6 +249,8 @@ class MainActivity : Activity() {
         configureSettingsWindowInsets()
         displayScreen = findViewById(R.id.displayScreen)
         serviceAddressInput = findViewById(R.id.serviceAddressInput)
+        scanQrButton = findViewById(R.id.scanQrButton)
+        qrScanStatusText = findViewById(R.id.qrScanStatus)
         deviceNameInput = findViewById(R.id.deviceNameInput)
         discoveryStatus = findViewById(R.id.discoveryStatus)
         discoveryHostsList = findViewById(R.id.discoveryHostsList)
@@ -535,6 +559,7 @@ class MainActivity : Activity() {
 
     private fun bindActions() {
         connectButton.setOnClickListener { connectFromSettings() }
+        scanQrButton.setOnClickListener { startQrScan() }
         localProjectionButton.setOnClickListener {
             startEmbeddedHost(EmbeddedHostMode.LOCAL_PROJECTION)
         }
@@ -550,6 +575,123 @@ class MainActivity : Activity() {
         retryButton.setOnClickListener { loadDisplayPage() }
         backToSettingsButton.setOnClickListener { returnToSettingsFromDisplay() }
         emergencyExitButton.setOnClickListener { confirmExitProjection() }
+    }
+
+    private fun startQrScan() {
+        if (qrScanInFlight) return
+        qrScanInFlight = true
+        scanQrButton.isEnabled = false
+
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
+            finishQrScan(QrScanUiStatus.NO_CAMERA)
+            return
+        }
+
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            showQrScanStatus(QrScanUiStatus.REQUESTING_PERMISSION)
+            try {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            } catch (_: RuntimeException) {
+                finishQrScan(QrScanUiStatus.FAILED)
+            }
+            return
+        }
+
+        launchQrScanner()
+    }
+
+    private fun launchQrScanner() {
+        showQrScanStatus(QrScanUiStatus.SCANNING)
+        try {
+            val options = ScanOptions().apply {
+                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                setPrompt(getString(R.string.qr_scan_prompt))
+                setBeepEnabled(false)
+                setBarcodeImageEnabled(false)
+                setCaptureActivity(MarkerDeckCaptureActivity::class.java)
+                setOrientationLocked(true)
+            }
+            qrScanLauncher.launch(options)
+        } catch (_: ActivityNotFoundException) {
+            finishQrScan(QrScanUiStatus.FAILED)
+        } catch (_: SecurityException) {
+            finishQrScan(QrScanUiStatus.FAILED)
+        } catch (_: RuntimeException) {
+            finishQrScan(QrScanUiStatus.FAILED)
+        }
+    }
+
+    private fun finishQrScan(status: QrScanUiStatus? = null) {
+        qrScanInFlight = false
+        if (::scanQrButton.isInitialized) scanQrButton.isEnabled = true
+        status?.let(::showQrScanStatus)
+    }
+
+    private fun handleQrScanResult(result: ScanIntentResult) {
+        val evaluated = evaluateQrHostScan(result.contents)
+        when (evaluated.kind) {
+            QrHostScanResultKind.ACCEPTED -> {
+                val address = evaluated.normalizedServiceAddress ?: run {
+                    showQrScanStatus(QrScanUiStatus.FAILED)
+                    return
+                }
+                applyingSettingsDraft = true
+                try {
+                    serviceAddressInput.setText(address)
+                    serviceAddressInput.setSelection(address.length)
+                } finally {
+                    applyingSettingsDraft = false
+                }
+                settingsDraft = updateSettingsDraft(
+                    settingsDraft,
+                    SettingsField.SERVICE_ADDRESS,
+                    address
+                )
+                serviceAddressInput.error = null
+                showQrScanStatus(QrScanUiStatus.SUCCESS, address)
+            }
+
+            QrHostScanResultKind.CANCELLED ->
+                showQrScanStatus(QrScanUiStatus.CANCELLED)
+
+            QrHostScanResultKind.EMPTY ->
+                showQrScanStatus(QrScanUiStatus.EMPTY)
+
+            QrHostScanResultKind.INVALID ->
+                showQrScanStatus(QrScanUiStatus.INVALID)
+        }
+    }
+
+    private fun showQrScanStatus(status: QrScanUiStatus, address: String? = null) {
+        if (!::qrScanStatusText.isInitialized) return
+        qrScanStatusText.visibility = View.VISIBLE
+        qrScanStatusText.text = when (status) {
+            QrScanUiStatus.REQUESTING_PERMISSION ->
+                getString(R.string.qr_scan_requesting_permission)
+            QrScanUiStatus.SCANNING -> getString(R.string.qr_scan_scanning)
+            QrScanUiStatus.SUCCESS -> getString(R.string.qr_scan_success, address.orEmpty())
+            QrScanUiStatus.CANCELLED -> getString(R.string.qr_scan_cancelled)
+            QrScanUiStatus.EMPTY -> getString(R.string.qr_scan_empty)
+            QrScanUiStatus.INVALID -> getString(R.string.qr_scan_invalid)
+            QrScanUiStatus.FAILED -> getString(R.string.qr_scan_failed)
+            QrScanUiStatus.PERMISSION_DENIED -> getString(R.string.qr_scan_permission_denied)
+            QrScanUiStatus.NO_CAMERA -> getString(R.string.qr_scan_no_camera)
+        }
+        qrScanStatusText.setTextColor(
+            getColor(
+                when (status) {
+                    QrScanUiStatus.SUCCESS -> R.color.markerdeck_foreground
+                    QrScanUiStatus.CANCELLED,
+                    QrScanUiStatus.EMPTY,
+                    QrScanUiStatus.INVALID,
+                    QrScanUiStatus.FAILED,
+                    QrScanUiStatus.PERMISSION_DENIED,
+                    QrScanUiStatus.NO_CAMERA -> R.color.markerdeck_error
+                    QrScanUiStatus.REQUESTING_PERMISSION,
+                    QrScanUiStatus.SCANNING -> R.color.markerdeck_muted
+                }
+            )
+        )
     }
 
     private inner class ProjectionJavascriptBridge(
@@ -584,6 +726,22 @@ class MainActivity : Activity() {
             dispatchEmergencyControlEvent(
                 sourceWebView,
                 ProjectionEmergencyControlEvent.HIDE_REQUESTED
+            )
+        }
+
+        @JavascriptInterface
+        fun beginProjectionControlInteraction() {
+            dispatchEmergencyControlEvent(
+                sourceWebView,
+                ProjectionEmergencyControlEvent.CONTROL_INTERACTION_STARTED
+            )
+        }
+
+        @JavascriptInterface
+        fun endProjectionControlInteraction() {
+            dispatchEmergencyControlEvent(
+                sourceWebView,
+                ProjectionEmergencyControlEvent.CONTROL_INTERACTION_ENDED
             )
         }
     }
@@ -671,9 +829,6 @@ class MainActivity : Activity() {
         emergencyControlsTimeoutCallback?.let(mainHandler::removeCallbacks)
         emergencyControlsTimeoutCallback = null
     }
-
-    private fun ProjectionEmergencyControlsState.hasTimeout(): Boolean =
-        visible && timeoutBehavior != ProjectionEmergencyControlsTimeoutBehavior.NONE
 
     private fun clearEmergencyControls() {
         if (!::emergencyExitButton.isInitialized) return
@@ -845,12 +1000,14 @@ class MainActivity : Activity() {
             deviceName = normalizedName
         )
         connectButton.isEnabled = false
+        scanQrButton.isEnabled = false
         setEmbeddedModeButtonsEnabled(false)
         serviceAddressInput.isEnabled = false
         deviceNameInput.isEnabled = false
         settingsStatus.setText(R.string.saving_settings_status)
         val saveErrorHandler = CoroutineExceptionHandler { _, error ->
             connectButton.isEnabled = true
+            scanQrButton.isEnabled = true
             setEmbeddedModeButtonsEnabled(true)
             serviceAddressInput.isEnabled = true
             deviceNameInput.isEnabled = true
@@ -963,6 +1120,7 @@ class MainActivity : Activity() {
     private fun startEmbeddedHost(mode: EmbeddedHostMode) {
         val hostName = normalizeHostName(hostNameInput.text.toString())
         hostNameInput.error = null
+        scanQrButton.isEnabled = false
         setEmbeddedModeButtonsEnabled(false)
         connectButton.isEnabled = false
         serviceAddressInput.isEnabled = false
@@ -980,6 +1138,7 @@ class MainActivity : Activity() {
                 stopEmbeddedHostService()
                 setEmbeddedModeButtonsEnabled(true)
                 connectButton.isEnabled = true
+                scanQrButton.isEnabled = true
                 serviceAddressInput.isEnabled = true
                 deviceNameInput.isEnabled = true
                 renderEmbeddedHostUi()
@@ -1021,6 +1180,7 @@ class MainActivity : Activity() {
             stopEmbeddedHostService()
             setEmbeddedModeButtonsEnabled(true)
             connectButton.isEnabled = true
+            scanQrButton.isEnabled = true
             serviceAddressInput.isEnabled = true
             deviceNameInput.isEnabled = true
             renderEmbeddedHostUi()
@@ -1311,10 +1471,12 @@ class MainActivity : Activity() {
         displayScreen.visibility = View.GONE
         settingsScreen.visibility = View.VISIBLE
         connectButton.isEnabled = true
+        scanQrButton.isEnabled = !qrScanInFlight
         setEmbeddedModeButtonsEnabled(true)
         serviceAddressInput.isEnabled = true
         deviceNameInput.isEnabled = true
         displayDiagnosticMessage.visibility = View.GONE
+        qrScanStatusText.visibility = View.GONE
         settingsStatusOverride = null
         settingsStatus.setText(R.string.settings_not_connected_status)
         settingsStatus.setTextColor(getColor(R.color.markerdeck_muted))
@@ -1351,6 +1513,7 @@ class MainActivity : Activity() {
     private fun applyDisplayWindowState() {
         // This gate keeps the settings surface out of the keyguard window path.
         if (!shouldApplyDisplayWindowState(displayActive && activeWebMode.isProjectionSurface)) return
+        updateProjectionWindowBrightness(projectionActive = true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -1368,6 +1531,7 @@ class MainActivity : Activity() {
     }
 
     private fun clearDisplayWindowState() {
+        updateProjectionWindowBrightness(projectionActive = false)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(false)
@@ -1380,6 +1544,16 @@ class MainActivity : Activity() {
         )
         exitImmersiveMode(window)
         displayWindowStateApplied = false
+    }
+
+    private fun updateProjectionWindowBrightness(projectionActive: Boolean) {
+        val attributes = window.attributes
+        attributes.screenBrightness = if (projectionActive) {
+            projectionWindowScreenBrightness(projectionActive = true, webMode = activeWebMode)
+        } else {
+            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        }
+        window.attributes = attributes
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -1658,7 +1832,7 @@ class MainActivity : Activity() {
         }
     }
 
-    @SuppressLint("GestureBackNavigation")
+    @SuppressLint("GestureBackNavigation", "MissingSuperCall")
     @Deprecated("Use OnBackInvokedDispatcher on newer Android versions.")
     override fun onBackPressed() {
         handleBackPressed()

@@ -56,7 +56,8 @@ data class HostLockDelivery(
     val commandId: String,
     val enabled: Boolean,
     val targetSessionIds: List<String>,
-    val status: HostLockCommandStatus
+    val status: HostLockCommandStatus,
+    val global: Boolean = false
 )
 
 class MarkerDeckHostStateStore(
@@ -186,7 +187,7 @@ class MarkerDeckHostStateStore(
             devices.values.filter { it.deviceId == deviceId }.forEach { it.name = requestedName }
         }
 
-        val nextState = previous?.state
+        val nextState = previous?.state?.let(::normalizeHostState)
             ?: if (request.state.isEmpty()) globalState else normalizeHostState(request.state)
         val role = normalizedHostRole(request.role)
         val width = request.width.coerceAtLeast(0)
@@ -222,6 +223,7 @@ class MarkerDeckHostStateStore(
             name = registeredName,
             state = nextState,
             globalLockCommandId = globalLock.commandId,
+            globalLockCommand = globalLock.command,
             deviceListChanged = changed
         )
     }
@@ -352,7 +354,7 @@ class MarkerDeckHostStateStore(
             command = if (enabled) "lock" else "unlock",
             commandId = delivery.commandId
         )
-        return delivery
+        return delivery.copy(global = true)
     }
 
     @Synchronized

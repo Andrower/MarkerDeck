@@ -2,7 +2,8 @@
   "use strict";
 
   const app = global.MarkerDeck;
-  const { dom, readState, colorWithBrightness } = app.core;
+  const { dom, readState } = app.core;
+  const { canonicalizeState, colorWithOverallBrightness } = app.visualState;
   const ctx = dom.canvas.getContext("2d", { alpha: false });
   let renderListeners = [];
 
@@ -36,17 +37,18 @@
   }
 
   function drawStateToContext(targetCtx, width, height, state) {
-    const bg = colorWithBrightness(state.bgColor, state.bgBrightness);
-    const cross = colorWithBrightness(state.crossColor, state.crossBrightness);
+    const normalizedState = canonicalizeState(state || {});
+    const bg = colorWithOverallBrightness(normalizedState.bgColor, normalizedState.overallBrightness);
+    const cross = colorWithOverallBrightness(normalizedState.crossColor, normalizedState.overallBrightness);
     const base = Math.min(width, height);
-    const size = base * (Number(state.crossSize) / 100);
-    const thickness = Math.max(1, base * (Number(state.crossThickness) / 100));
-    const inset = base * (Number(state.edgeRatio) / 100);
-    const centerY = height * (Number(state.centerY) / 100);
+    const size = base * (Number(normalizedState.crossSize) / 100);
+    const thickness = Math.max(1, base * (Number(normalizedState.crossThickness) / 100));
+    const inset = base * (Number(normalizedState.edgeRatio) / 100);
+    const centerY = height * (Number(normalizedState.centerY) / 100);
 
     targetCtx.fillStyle = bg;
     targetCtx.fillRect(0, 0, width, height);
-    if (String(state.hideCross || "0") === "1") return;
+    if (String(normalizedState.hideCross || "0") === "1") return;
     targetCtx.fillStyle = cross;
     const basePoints = [
       [inset, inset],
@@ -56,9 +58,9 @@
       [width - inset, height - inset]
     ];
     const points = [...basePoints];
-    if (String(state.randomPoints || "0") === "1") {
-      const random = seededRandom(`${state.randomSeed || "default"}:${width}x${height}`);
-      const count = clampNumber(state.randomPointCount, 4, 80);
+    if (String(normalizedState.randomPoints || "0") === "1") {
+      const random = seededRandom(`${normalizedState.randomSeed || "default"}:${width}x${height}`);
+      const count = clampNumber(normalizedState.randomPointCount, 4, 80);
       const margin = Math.max(size, base * 0.04);
       const availableArea = Math.max(1, (width - margin * 2) * (height - margin * 2));
       const spacingByArea = Math.sqrt(availableArea / Math.max(1, count + basePoints.length)) * 0.78;
@@ -103,8 +105,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const state = readState();
     drawStateToContext(ctx, w, h, state);
-    dom.outputs.bgBrightness.textContent = `${state.bgBrightness}%`;
-    dom.outputs.crossBrightness.textContent = `${state.crossBrightness}%`;
+    dom.outputs.overallBrightness.textContent = `${state.overallBrightness}%`;
     dom.outputs.crossSize.textContent = `${state.crossSize}%`;
     dom.outputs.crossThickness.textContent = `${state.crossThickness}%`;
     dom.outputs.edgeRatio.textContent = `${state.edgeRatio}%`;
