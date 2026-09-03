@@ -4,9 +4,32 @@ const http = require("node:http");
 const os = require("node:os");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
+const dgram = require("node:dgram");
 const { spawn } = require("node:child_process");
+const { createMarkerDeckHostScanner } = require("./markerdeck-host-discovery");
 
 const PORT = Number(process.env.PORT || 8765);
+const DISCOVERY_PROTOCOL_VERSION = 1;
+const DISCOVERY_SERVICE = "markerdeck";
+const DISCOVERY_PACKET_TYPE = "response";
+const DISCOVERY_REQUEST_TYPE = "discover";
+const DISCOVERY_MULTICAST_ADDRESS = "239.255.77.77";
+// Keep discovery on a fixed LAN port so clients can find servers whose HTTP port is configured.
+const DISCOVERY_PORT = Number(process.env.MARKERDECK_DISCOVERY_PORT || 8766);
+const HOST_SCAN_PORT = Number(process.env.MARKERDECK_HOST_SCAN_PORT || DISCOVERY_PORT);
+const HOST_SCAN_TARGETS = String(process.env.MARKERDECK_HOST_SCAN_TARGETS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const DISCOVERY_NAME = String(process.env.MARKERDECK_DISCOVERY_NAME || "MarkerDeck").trim().slice(0, 40) || "MarkerDeck";
+const DISCOVERY_INSTANCE_ID = crypto.randomBytes(12).toString("hex");
+const hostScanner = createMarkerDeckHostScanner({
+  discoveryPort: HOST_SCAN_PORT,
+  selfInstanceId: DISCOVERY_INSTANCE_ID,
+  targets: HOST_SCAN_TARGETS
+});
+const DISCOVERY_MAX_PACKET_SIZE = 4096;
 const ROOT = __dirname;
 const WEB_ROOT = path.join(ROOT, "web");
 const DATA_ROOT = process.env.MARKERDECK_DATA_DIR
@@ -25,9 +48,22 @@ const SETTINGS_FILE = path.join(DATA_ROOT, "markerdeck-settings.json");
 const LEGACY_SETTINGS_FILE = path.join(DATA_ROOT, "chroma-settings.json");
 const DEVICE_OFFLINE_MS = 5000;
 const DEFAULT_DEVICE_RETENTION_MS = 10 * 60 * 1000;
-const PAGES = new Set([
-  "markerdeck-screen.html",
-  "markerdeck-launch.html"
+const STATIC_ASSETS = new Map([
+  ["/markerdeck-screen.html", { file: "markerdeck-screen.html", type: "text/html; charset=utf-8" }],
+  ["/markerdeck-launch.html", { file: "markerdeck-launch.html", type: "text/html; charset=utf-8" }],
+  ["/markerdeck-base.css", { file: "markerdeck-base.css", type: "text/css; charset=utf-8" }],
+  ["/markerdeck-control.css", { file: "markerdeck-control.css", type: "text/css; charset=utf-8" }],
+  ["/markerdeck-mobile.css", { file: "markerdeck-mobile.css", type: "text/css; charset=utf-8" }],
+  ["/markerdeck-core.js", { file: "markerdeck-core.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-api.js", { file: "markerdeck-api.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-canvas.js", { file: "markerdeck-canvas.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-export.js", { file: "markerdeck-export.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-presets.js", { file: "markerdeck-presets.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-devices.js", { file: "markerdeck-devices.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-projection.js", { file: "markerdeck-projection.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-settings.js", { file: "markerdeck-settings.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-launcher.js", { file: "markerdeck-launcher.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-bootstrap.js", { file: "markerdeck-bootstrap.js", type: "text/javascript; charset=utf-8" }]
 ]);
 const LEGACY_PAGE_REDIRECTS = new Map([
   ["/chroma-cross-screen.html", "/markerdeck-screen.html"],
@@ -586,6 +622,69 @@ function getFormatBits(ecl, mask) {
 }
 
 let server;
+let discoveryServer;
+
+function discoveryInfo(nonce = "") {
+  const lanIp = getLanIp();
+  return {
+    service: DISCOVERY_SERVICE,
+    protocolVersion: DISCOVERY_PROTOCOL_VERSION,
+    type: DISCOVERY_PACKET_TYPE,
+    name: DISCOVERY_NAME,
+    port: PORT,
+    httpUrl: `http://${lanIp}:${PORT}`,
+    instanceId: DISCOVERY_INSTANCE_ID,
+    ...(nonce ? { nonce } : {})
+  };
+}
+
+function parseDiscoveryRequest(message) {
+  if (message.length > DISCOVERY_MAX_PACKET_SIZE) return null;
+  try {
+    const request = JSON.parse(message.toString("utf8"));
+    const nonce = String(request?.nonce || "").trim();
+    if (request?.service !== DISCOVERY_SERVICE ||
+        request?.protocolVersion !== DISCOVERY_PROTOCOL_VERSION ||
+        request?.type !== DISCOVERY_REQUEST_TYPE ||
+        !/^[A-Za-z0-9_-]{8,80}$/.test(nonce)) {
+      return null;
+    }
+    return { nonce };
+  } catch (_) {
+    return null;
+  }
+}
+
+function startDiscoveryServer() {
+  if (!Number.isInteger(DISCOVERY_PORT) || DISCOVERY_PORT < 1024 || DISCOVERY_PORT > 65535) {
+    console.error(`MarkerDeck UDP discovery disabled: invalid port ${DISCOVERY_PORT}`);
+    return;
+  }
+  discoveryServer = dgram.createSocket({ type: "udp4", reuseAddr: true });
+  discoveryServer.on("error", (error) => {
+    console.error(`MarkerDeck UDP discovery unavailable: ${error.message}`);
+    discoveryServer?.close();
+    discoveryServer = undefined;
+  });
+  discoveryServer.on("message", (message, remote) => {
+    const request = parseDiscoveryRequest(message);
+    if (!request || remote.family !== "IPv4") return;
+    const response = Buffer.from(JSON.stringify(discoveryInfo(request.nonce)), "utf8");
+    discoveryServer.send(response, remote.port, remote.address, (error) => {
+      if (error) console.error(`MarkerDeck UDP discovery response failed: ${error.message}`);
+    });
+  });
+  discoveryServer.on("listening", () => {
+    try {
+      discoveryServer.addMembership(DISCOVERY_MULTICAST_ADDRESS);
+    } catch (error) {
+      console.error(`MarkerDeck UDP multicast discovery unavailable: ${error.message}`);
+    }
+    const address = discoveryServer.address();
+    console.log(`MarkerDeck UDP discovery listening on ${address.address}:${address.port}`);
+  });
+  discoveryServer.bind(DISCOVERY_PORT, "0.0.0.0");
+}
 
 async function handler(req, res) {
   if (req.method === "OPTIONS") return send(res, 204, "");
@@ -613,8 +712,28 @@ async function handler(req, res) {
     return send(res, 200, JSON.stringify({
       ip: lanIp,
       port: PORT,
-      url: `http://${lanIp}:${PORT}${LAUNCH_PAGE}`
+      url: `http://${lanIp}:${PORT}${LAUNCH_PAGE}`,
+      discoveryPort: DISCOVERY_PORT,
+      protocolVersion: DISCOVERY_PROTOCOL_VERSION,
+      capabilities: {
+        videoExport: true,
+        pngExport: true,
+        sse: true,
+        udpDiscovery: true,
+        hostDiscovery: true
+      }
     }), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/discovery" && req.method === "GET") {
+    const nonce = String(url.searchParams.get("nonce") || "").trim();
+    if (!/^[A-Za-z0-9_-]{8,80}$/.test(nonce)) return send(res, 400, "Invalid discovery nonce");
+    return send(res, 200, JSON.stringify(discoveryInfo(nonce)), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/hosts" && req.method === "GET") {
+    const hosts = await hostScanner.scan();
+    return send(res, 200, JSON.stringify({ hosts, scannedAt: Date.now() }), "application/json; charset=utf-8");
   }
 
   if (url.pathname === "/api/events" && req.method === "GET") {
@@ -980,12 +1099,10 @@ async function handler(req, res) {
     }
   }
 
-  const fileName = path.basename(url.pathname);
-  if (!PAGES.has(fileName)) return send(res, 404, "Not found");
-  const filePath = path.join(WEB_ROOT, fileName);
-  const ext = path.extname(filePath);
-  const type = ext === ".html" ? "text/html; charset=utf-8" : ext === ".js" ? "text/javascript; charset=utf-8" : "application/octet-stream";
-  send(res, 200, fs.readFileSync(filePath), type);
+  const asset = STATIC_ASSETS.get(url.pathname);
+  if (!asset || req.method !== "GET") return send(res, 404, "Not found");
+  const filePath = path.join(WEB_ROOT, asset.file);
+  return send(res, 200, fs.readFileSync(filePath), asset.type);
 }
 
 server = http.createServer((req, res) => {
@@ -994,6 +1111,8 @@ server = http.createServer((req, res) => {
   const url = `http://${getLanIp()}:${PORT}${LAUNCH_PAGE}`;
   console.log(`MarkerDeck 视效标记屏控服务运行: ${url}`);
 });
+
+startDiscoveryServer();
 
 const deviceCleanupTimer = setInterval(() => {
   const deletedIds = removeExpiredDevices();

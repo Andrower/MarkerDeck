@@ -12,6 +12,23 @@ const val WEBVIEW_CLEANUP_URL = "about:blank"
  * Builds the display URL without opening a connection or requiring Android UI state.
  */
 fun buildDisplayUrl(serviceAddress: String, deviceName: String = ""): String {
+    return buildWebModeUrl(serviceAddress, AndroidWebMode.REMOTE_DISPLAY, deviceName)
+}
+
+fun buildLocalProjectionUrl(serviceAddress: String): String =
+    buildWebModeUrl(serviceAddress, AndroidWebMode.LOCAL_PROJECTION)
+
+fun buildHostControlUrl(serviceAddress: String): String =
+    buildWebModeUrl(serviceAddress, AndroidWebMode.HOST_CONTROL)
+
+fun buildWebModeUrl(
+    serviceAddress: String,
+    mode: AndroidWebMode,
+    deviceName: String = ""
+): String {
+    require(mode == AndroidWebMode.REMOTE_DISPLAY ||
+        mode == AndroidWebMode.LOCAL_PROJECTION || mode == AndroidWebMode.HOST_CONTROL
+    ) { "WebView mode must be a display, local, or control mode." }
     val normalizedAddress = normalizeServiceAddress(serviceAddress)
     val normalizedName = normalizeDeviceName(deviceName)
     val nameSuffix = if (normalizedName.isEmpty()) {
@@ -19,7 +36,12 @@ fun buildDisplayUrl(serviceAddress: String, deviceName: String = ""): String {
     } else {
         "&androidDeviceName=${encodeQueryValue(normalizedName)}"
     }
-    return "$normalizedAddress/markerdeck-screen.html?mode=display$nameSuffix"
+    val queryMode = when (mode) {
+        AndroidWebMode.LOCAL_PROJECTION -> "local"
+        AndroidWebMode.HOST_CONTROL -> "control"
+        else -> "display"
+    }
+    return "$normalizedAddress/markerdeck-screen.html?mode=$queryMode$nameSuffix"
 }
 
 /**
@@ -29,8 +51,13 @@ fun normalizeServiceAddress(serviceAddress: String): String {
     val input = serviceAddress.trim()
     require(input.isNotEmpty()) { "Service address must not be empty." }
 
+    val uriInput = when {
+        input.matches(Regex("^[A-Za-z][A-Za-z0-9+.-]*://.*")) -> input
+        input.contains("://") -> input
+        else -> "http://$input"
+    }
     val uri = try {
-        URI(input)
+        URI(uriInput)
     } catch (error: URISyntaxException) {
         throw IllegalArgumentException("Service address is not a valid URI.", error)
     }

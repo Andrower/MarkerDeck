@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const dgram = require("node:dgram");
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
@@ -9,6 +10,10 @@ const { after, before, test } = require("node:test");
 const root = path.resolve(__dirname, "..");
 const port = 18000 + (process.pid % 10000);
 const origin = `http://127.0.0.1:${port}`;
+const discoveryPort = 20000 + (process.pid % 10000);
+const fakeHostPort = 30000 + (process.pid % 10000);
+const hostScanPort = 40000 + (process.pid % 10000);
+const fakeHostInstanceId = "test-mobile-host-01";
 const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "markerdeck-test-"));
 const legacyPresetsFile = path.join(dataDirectory, "chroma-presets.json");
 const legacySettingsFile = path.join(dataDirectory, "chroma-settings.json");
@@ -20,6 +25,8 @@ fs.writeFileSync(legacyPresetsFile, JSON.stringify([{
 fs.writeFileSync(legacySettingsFile, JSON.stringify({ deviceRetentionMs: 60 * 1000 }, null, 2), "utf8");
 let serverProcess;
 let serverOutput = "";
+let fakeHostServer;
+let fakeDiscoverySocket;
 
 async function waitForServer() {
   const deadline = Date.now() + 8000;
@@ -108,11 +115,67 @@ function openSseConnection(role, sessionId, pageInstanceId = "") {
 }
 
 before(async () => {
+  fakeHostServer = http.createServer((request, response) => {
+    const url = new URL(request.url, `http://127.0.0.1:${fakeHostPort}`);
+    const nonce = String(url.searchParams.get("nonce") || "");
+    if (url.pathname !== "/api/discovery" || !/^[A-Za-z0-9_-]{8,80}$/.test(nonce)) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+    const body = JSON.stringify({
+      service: "markerdeck",
+      protocolVersion: 1,
+      type: "response",
+      nonce,
+      name: "测试手机宿主",
+      port: fakeHostPort,
+      httpUrl: `http://127.0.0.1:${fakeHostPort}`,
+      instanceId: fakeHostInstanceId
+    });
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    response.end(body);
+  });
+  await new Promise((resolve, reject) => {
+    fakeHostServer.once("error", reject);
+    fakeHostServer.listen(fakeHostPort, "127.0.0.1", resolve);
+  });
+
+  fakeDiscoverySocket = dgram.createSocket("udp4");
+  fakeDiscoverySocket.on("message", (message, remote) => {
+    let request;
+    try {
+      request = JSON.parse(message.toString("utf8"));
+    } catch (_) {
+      return;
+    }
+    if (request.service !== "markerdeck" || request.protocolVersion !== 1 ||
+        request.type !== "discover" || !/^[A-Za-z0-9_-]{8,80}$/.test(request.nonce)) return;
+    const response = Buffer.from(JSON.stringify({
+      service: "markerdeck",
+      protocolVersion: 1,
+      type: "response",
+      nonce: request.nonce,
+      name: "测试手机宿主",
+      port: fakeHostPort,
+      httpUrl: `http://127.0.0.1:${fakeHostPort}`,
+      instanceId: fakeHostInstanceId
+    }));
+    fakeDiscoverySocket.send(response, remote.port, remote.address);
+  });
+  await new Promise((resolve, reject) => {
+    fakeDiscoverySocket.once("error", reject);
+    fakeDiscoverySocket.bind(hostScanPort, "127.0.0.1", resolve);
+  });
+
   serverProcess = spawn(process.execPath, [path.join(root, "src/markerdeck-server.js")], {
     cwd: root,
     env: {
       ...process.env,
       PORT: String(port),
+      MARKERDECK_DISCOVERY_PORT: String(discoveryPort),
+      MARKERDECK_HOST_SCAN_PORT: String(hostScanPort),
+      MARKERDECK_HOST_SCAN_TARGETS: "127.0.0.1",
       MARKERDECK_DATA_DIR: dataDirectory
     },
     stdio: ["ignore", "pipe", "pipe"]
@@ -126,6 +189,12 @@ after(async () => {
   if (serverProcess && serverProcess.exitCode === null) {
     serverProcess.kill("SIGTERM");
     await new Promise((resolve) => serverProcess.once("exit", resolve));
+  }
+  if (fakeDiscoverySocket) {
+    await new Promise((resolve) => fakeDiscoverySocket.close(resolve));
+  }
+  if (fakeHostServer) {
+    await new Promise((resolve) => fakeHostServer.close(resolve));
   }
   fs.rmSync(dataDirectory, { recursive: true, force: true });
 });
@@ -142,8 +211,41 @@ test("serves launch and control pages", async () => {
   const display = await fetch(`${origin}/markerdeck-screen.html?mode=display&androidDeviceName=${encodeURIComponent("入口 & 屏")}`);
   assert.equal(display.status, 200);
   const displayHtml = await display.text();
-  assert.match(displayHtml, /androidProvidedDeviceName/);
-  assert.match(displayHtml, /saveLocalDeviceName\(providedDeviceName\)/);
+  assert.match(displayHtml, /<link rel="stylesheet" href="markerdeck-base\.css">/);
+  assert.match(displayHtml, /<link rel="stylesheet" href="markerdeck-control\.css">/);
+  assert.match(displayHtml, /<link rel="stylesheet" href="markerdeck-mobile\.css">/);
+  assert.match(displayHtml, /<script src="markerdeck-projection\.js"><\/script>/);
+});
+
+test("serves modular screen assets with exact content types and rejects unknown resources", async () => {
+  const assets = [
+    ["/markerdeck-base.css", "text/css"],
+    ["/markerdeck-control.css", "text/css"],
+    ["/markerdeck-mobile.css", "text/css"],
+    ["/markerdeck-core.js", "text/javascript"],
+    ["/markerdeck-api.js", "text/javascript"],
+    ["/markerdeck-canvas.js", "text/javascript"],
+    ["/markerdeck-export.js", "text/javascript"],
+    ["/markerdeck-presets.js", "text/javascript"],
+    ["/markerdeck-devices.js", "text/javascript"],
+    ["/markerdeck-projection.js", "text/javascript"],
+    ["/markerdeck-settings.js", "text/javascript"],
+    ["/markerdeck-launcher.js", "text/javascript"],
+    ["/markerdeck-bootstrap.js", "text/javascript"]
+  ];
+  for (const [assetPath, contentType] of assets) {
+    const response = await fetch(`${origin}${assetPath}`);
+    assert.equal(response.status, 200, assetPath);
+    assert.match(response.headers.get("content-type"), new RegExp(`^${contentType}`));
+    assert.ok((await response.text()).length > 0, assetPath);
+  }
+
+  const unknown = await fetch(`${origin}/markerdeck-unknown.js`);
+  assert.equal(unknown.status, 404);
+  const removedStylesheet = await fetch(`${origin}/markerdeck-screen.css`);
+  assert.equal(removedStylesheet.status, 404);
+  const source = await fetch(`${origin}/../markerdeck-server.js`);
+  assert.equal(source.status, 404);
 });
 
 test("redirects legacy page URLs while preserving mode query parameters", async () => {
@@ -163,11 +265,69 @@ test("returns server information and QR code", async () => {
   assert.equal(response.status, 200);
   assert.equal(body.port, port);
   assert.match(body.url, /markerdeck-launch\.html$/);
+  assert.equal(body.capabilities.hostDiscovery, true);
 
   const qr = await fetch(`${origin}/qr.svg?text=${encodeURIComponent(body.url)}`);
   assert.equal(qr.status, 200);
   assert.match(qr.headers.get("content-type"), /image\/svg\+xml/);
   assert.match(await qr.text(), /^<svg/);
+});
+
+test("answers nonce-scoped LAN discovery requests and verifies the HTTP endpoint", async () => {
+  const nonce = "test-discovery-nonce";
+  const response = await new Promise((resolve, reject) => {
+    const socket = dgram.createSocket("udp4");
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error("Timed out waiting for discovery response"));
+    }, 3000);
+    socket.on("message", (message) => {
+      clearTimeout(timeout);
+      socket.close();
+      resolve(JSON.parse(message.toString("utf8")));
+    });
+    socket.on("error", (error) => {
+      clearTimeout(timeout);
+      socket.close();
+      reject(error);
+    });
+    socket.bind(() => {
+      const request = Buffer.from(JSON.stringify({
+        service: "markerdeck",
+        protocolVersion: 1,
+        type: "discover",
+        nonce
+      }));
+      socket.send(request, discoveryPort, "127.0.0.1");
+    });
+  });
+  assert.equal(response.service, "markerdeck");
+  assert.equal(response.protocolVersion, 1);
+  assert.equal(response.type, "response");
+  assert.equal(response.nonce, nonce);
+  assert.equal(response.port, port);
+
+  const handshake = await jsonRequest(`/api/discovery?nonce=${nonce}`);
+  assert.equal(handshake.response.status, 200);
+  assert.equal(handshake.body.nonce, nonce);
+  assert.equal(handshake.body.httpUrl.startsWith("http://"), true);
+
+  const invalidHandshake = await fetch(`${origin}/api/discovery`);
+  assert.equal(invalidHandshake.status, 400);
+});
+
+test("discovers and verifies another LAN host for quick control access", async () => {
+  const result = await jsonRequest("/api/hosts");
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.hosts.length, 1);
+  assert.deepEqual(result.body.hosts[0], {
+    instanceId: fakeHostInstanceId,
+    name: "测试手机宿主",
+    serviceAddress: `http://127.0.0.1:${fakeHostPort}`,
+    controlUrl: `http://127.0.0.1:${fakeHostPort}/markerdeck-screen.html?mode=control`,
+    port: fakeHostPort
+  });
+  assert.equal(Number.isFinite(result.body.scannedAt), true);
 });
 
 test("loads legacy presets and settings during the MarkerDeck migration", async () => {

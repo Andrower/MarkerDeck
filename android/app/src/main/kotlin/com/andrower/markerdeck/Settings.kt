@@ -2,19 +2,9 @@ package com.andrower.markerdeck
 
 const val MAX_DEVICE_NAME_LENGTH = 40
 
-enum class DisplayMode(val storageValue: String, val label: String) {
-    ORDINARY_DISPLAY("display", "普通投放");
-
-    companion object {
-        fun fromStorage(value: String?): DisplayMode =
-            values().firstOrNull { it.storageValue == value } ?: ORDINARY_DISPLAY
-    }
-}
-
 data class MarkerDeckSettings(
     val serviceAddress: String = "",
-    val deviceName: String = "",
-    val mode: DisplayMode = DisplayMode.ORDINARY_DISPLAY
+    val deviceName: String = ""
 )
 
 enum class SettingsField {
@@ -25,7 +15,6 @@ enum class SettingsField {
 data class SettingsDraft(
     val serviceAddress: String = "",
     val deviceName: String = "",
-    val mode: DisplayMode = DisplayMode.ORDINARY_DISPLAY,
     val editedFields: Set<SettingsField> = emptySet(),
     val hydrated: Boolean = false
 )
@@ -65,7 +54,6 @@ fun hydrateSettingsDraft(
         } else {
             saved.deviceName
         },
-        mode = saved.mode,
         hydrated = true
     )
 }
@@ -73,7 +61,6 @@ fun hydrateSettingsDraft(
 fun settingsDraftFromSaved(saved: MarkerDeckSettings): SettingsDraft = SettingsDraft(
     serviceAddress = saved.serviceAddress,
     deviceName = saved.deviceName,
-    mode = saved.mode,
     hydrated = true
 )
 
@@ -82,10 +69,8 @@ fun normalizeDeviceName(value: String): String =
 
 fun normalizeSettings(
     serviceAddress: String,
-    deviceName: String,
-    mode: DisplayMode = DisplayMode.ORDINARY_DISPLAY
+    deviceName: String
 ): MarkerDeckSettings = MarkerDeckSettings(
     serviceAddress = serviceAddress.trim(),
-    deviceName = normalizeDeviceName(deviceName),
-    mode = mode
+    deviceName = normalizeDeviceName(deviceName)
 )
