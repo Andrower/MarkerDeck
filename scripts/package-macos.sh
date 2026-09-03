@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-1.3.0}"
+VERSION="${1:-1.4.0}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT/artifacts}"
 PACKAGE_NAME="markerdeck-macos-arm64-v$VERSION"
 STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/markerdeck-macos.XXXXXX")"

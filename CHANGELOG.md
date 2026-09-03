@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.4.0 - 2026-09-03
+
+- Added an installable debug-signed Android APK to the cross-platform GitHub Release workflow alongside the macOS and Windows packages.
 - Added desktop LAN host discovery: the Node service actively scans MarkerDeck UDP responders, verifies each candidate through the nonce-scoped HTTP handshake, excludes itself, and exposes validated control URLs through `/api/hosts`. The desktop launch page now lists discovered phone or computer hosts with automatic scanning and manual refresh, while Android-hosted launch pages hide the unsupported scanner UI.
 - Removed the redundant “打开当前控制地址” action from the shared control page. The action could navigate the Android localhost WebView to its LAN alias and correctly trigger the existing same-origin protection; QR display, address display, and address copying remain available.
 - Moved the Android embedded HTTP/SSE/UDP host into a `connectedDevice` foreground service with a persistent service notification, one-time Android 13+ notification permission request, and explicit stop action. Leaving, destroying, or removing the Activity no longer stops an active host; explicit stop, remote-host switching, `/api/shutdown`, and force-stop still do.
