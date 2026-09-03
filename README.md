@@ -1,154 +1,107 @@
 # MarkerDeck
 
-MarkerDeck 是一套用于影视拍摄与后期跟踪的局域网多屏纯色/跟踪点投放控制工具。它可以在手机、平板或电脑上显示纯色背景与可调十字跟踪点，并允许控制端统一管理多台投放设备。
+面向影视现场的局域网多屏纯色与跟踪点投放控制工具。
 
-## 主要功能
-
-- 绿色、蓝色和浅灰色背景预设
-- 背景颜色、总体亮度、十字颜色、尺寸、粗细与位置调整
-- 隐藏十字，切换为纯色画面
-- 添加间距受控且互不重叠的随机跟踪点
-- 控制端查看设备状态、重命名、分组、批量修改和清理离线设备
-- 同一物理设备的多个接收页面默认折叠显示，可整体或展开后独立控制
-- SSE 实时状态推送及逐接收页面的锁定命令确认
-- 保存和删除自定义预设
-- 锁定投放、快捷键解锁和停止本地服务
-- 按自定义分辨率导出 PNG
-- 视频预览版支持按自定义时长导出 H.264 MP4
-- 批量导出可选择 ZIP 压缩包或多个独立文件
+[![最新 Release](https://img.shields.io/github/v/release/Andrower/MarkerDeck?display_name=tag&sort=semver)](https://github.com/Andrower/MarkerDeck/releases/latest)
+[![Source CI](https://github.com/Andrower/MarkerDeck/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/Andrower/MarkerDeck/actions/workflows/check.yml)
+[![Android CI](https://github.com/Andrower/MarkerDeck/actions/workflows/android-check.yml/badge.svg?branch=main)](https://github.com/Andrower/MarkerDeck/actions/workflows/android-check.yml)
+[![License](https://img.shields.io/github/license/Andrower/MarkerDeck)](LICENSE)
 
 ## 下载
 
-| 版本 | 系统 | 说明 | 下载 |
-| --- | --- | --- | --- |
-| 最新版 | Windows x64 桌面客户端 | 解压一次后运行，内置 Node.js 与 FFmpeg | [下载 Windows 版](https://github.com/Andrower/MarkerDeck/releases/latest) |
-| 最新版 | Windows x64 浏览器服务端 | 解压后运行批处理文件，内置 Node.js 与 FFmpeg | [下载 Windows 服务端](https://github.com/Andrower/MarkerDeck/releases/latest) |
-| 最新版 | macOS Apple Silicon | 解压后运行，适用于 arm64 机型 | [下载 Mac 版](https://github.com/Andrower/MarkerDeck/releases/latest) |
+前往 [最新 Release](https://github.com/Andrower/MarkerDeck/releases/latest)，在 Assets 中选择对应平台的文件：
 
-全部历史版本可在 [GitHub Releases](https://github.com/Andrower/MarkerDeck/releases) 中查看和回滚。
+| 平台与入口 | Release 文件名 | 说明 |
+| --- | --- | --- |
+| [Windows 桌面客户端 ZIP](https://github.com/Andrower/MarkerDeck/releases/latest) | `MarkerDeck.Client.<版本号>.zip` | Electron 全屏控制端；必须完整解压到文件夹后运行 `MarkerDeck.exe`，不要只移动 EXE。 |
+| [Windows 浏览器服务端 ZIP](https://github.com/Andrower/MarkerDeck/releases/latest) | `markerdeck-windows-x64-v<版本号>.zip` | 解压后运行 `start-markerdeck-server.bat`，用浏览器打开控制端。 |
+| [macOS ARM64 ZIP](https://github.com/Andrower/MarkerDeck/releases/latest) | `markerdeck-macos-arm64-v<版本号>.zip` | 适用于 Apple Silicon；解压后运行 `start-markerdeck-server.command`。 |
+| [Android APK](https://github.com/Andrower/MarkerDeck/releases/latest) | `markerdeck-android-debug-v<版本号>.apk` | 当前为 debug 签名 APK，适合测试和现场试用。 |
+
+Windows 桌面客户端 ZIP 内含 Electron、Node.js 和 FFmpeg 运行时，完整解压后才能正常启动。Android 当前 APK 使用 debug 签名，不代表正式商店发布包。历史版本见 [GitHub Releases](https://github.com/Andrower/MarkerDeck/releases)。
+
+## 核心场景
+
+MarkerDeck 适合需要让多台手机、平板或电脑同步显示纯色背景和跟踪标记的拍摄现场。控制端在同一局域网内管理投放端，修改画面后实时同步到选中的页面。
+
+主要能力：
+
+- 绿色、蓝色、浅灰色背景，以及自定义背景色和十字颜色
+- 总体亮度、十字大小、线条粗细、边距、中心高度和随机点数量调整
+- 纯色待机、隐藏十字、随机跟踪点和自定义预设
+- 查看投放端在线状态、画面缩略图、分组、重命名和批量控制
+- 同一物理设备的多个接收页面折叠管理，也可展开后独立选择
+- 远程锁定、快捷键解锁、PNG 导出和本地 FFmpeg MP4 导出
 
 ## 快速开始
 
-### Windows
+1. 下载对应平台的 ZIP 或 Android APK；Windows 桌面 ZIP 必须完整解压。
+2. 启动服务：Windows 浏览器包运行 `start-markerdeck-server.bat`，macOS 运行 `start-markerdeck-server.command`；桌面客户端直接运行 `MarkerDeck.exe`。
+3. 在电脑打开 `http://localhost:8765/markerdeck-launch.html`，或使用启动页显示的局域网地址。
+4. 让手机、平板或另一台电脑连接同一局域网或手机热点，打开启动页地址，选择“作为投放端”。
+5. 回到控制端选择设备，调整画面、应用预设或锁定投放。
 
-1. 下载 `MarkerDeck.Client.<版本号>.zip` 并完整解压。
-2. 双击解压目录中的 `MarkerDeck.exe`。
-3. 不要把 EXE 单独移出目录；`ffmpeg.dll`、Node.js 和 FFmpeg 必须和程序目录一起保留。
+手机和平板必须使用启动页显示的局域网地址，不能把 `localhost` 或 `127.0.0.1` 作为远程设备地址。端口被占用时，macOS 启动脚本会选择后续可用端口；防火墙需要允许服务使用 HTTP 端口和 UDP `8766`。
 
-浏览器服务端包使用 `markerdeck-windows-x64-v<版本号>.zip`，解压后双击 `start-markerdeck-server.bat`。
+## 真实界面预览
 
-### macOS
+控制端工作区由三部分组成：快速连接显示二维码和地址，设备管理显示在线投放端与缩略图，画面设置集中处理预设、颜色、亮度、点位和导出。页面使用当前仓库的真实 HTML/CSS/JavaScript 控制端，不依赖第三方云服务。
 
-1. 解压下载的 ZIP。
-2. 双击 `start-markerdeck-server.command`。
-3. 首次启动如遇系统安全提示，请右键该文件并选择“打开”。
-4. 保持终端窗口运行。
+![MarkerDeck 控制端概览](docs/assets/markerdeck-control-overview.png)
 
-## 连接设备
+图中设备名称和连接地址均为脱敏的演示数据。
 
-1. 电脑与手机连接到同一个局域网或同一个手机热点。
-2. 启动程序后，电脑会打开启动页。
-3. 手机扫描启动页中的二维码。
-4. 电脑进入“控制端”，需要投放画面的手机进入“被控端”。
-5. 在控制端选择一个或多个设备，再修改画面、预设、分组或锁定状态。
+## 平台能力
 
-电脑启动页会自动扫描同一局域网内由手机或其他电脑提供的 MarkerDeck 宿主，并在“局域网宿主”区域显示通过 UDP 发现和 HTTP nonce 握手验证的控制地址。点击宿主即可进入它的控制端；“刷新”会重新执行一次短时扫描。防火墙需要允许 MarkerDeck 使用 UDP `8766` 和对应宿主的 HTTP 端口。
+| 能力 | Windows 桌面客户端 | Windows 浏览器服务端 | macOS ARM64 | Android APK |
+| --- | --- | --- | --- | --- |
+| 控制端与投放端 | 支持 | 支持 | 支持 | 支持 |
+| 局域网发现 | 支持 | 支持 | 支持 | 作为宿主时支持 |
+| PNG 导出 | 支持 | 支持 | 支持 | 宿主控制页支持 |
+| MP4 导出 | 支持，内置 FFmpeg | 支持，内置 FFmpeg | 支持，按本机 FFmpeg 可用性 | 不支持 |
+| 桌面全屏、置顶和按键拦截 | 支持 | 由浏览器决定 | 由浏览器决定 | 使用 Android 投放窗口 |
+| Android 前台宿主 | 不适用 | 不适用 | 不适用 | 支持 |
 
-默认电脑入口为：
+## 网络与锁定边界
 
-```text
-http://localhost:8765/markerdeck-launch.html
-```
+- 控制服务默认只在本机和当前局域网中运行；设备状态、控制指令和预设不需要上传到第三方云服务。不要把服务端口直接暴露到公网。
+- 局域网发现使用 UDP `8766`，发现到的地址还会通过 nonce 作用域的 HTTP 握手验证。电脑与投放设备应连接同一个局域网或手机热点。
+- `localhost` 只表示当前设备。手机连接电脑服务时，应使用启动页给出的局域网 IP 或二维码地址，不能使用电脑上的 `localhost`。
+- 网页和桌面客户端可以拦截常见的退出、刷新、返回和全屏快捷键，但普通应用无法完全拦截操作系统保留按键。
+- Windows 键、`Ctrl + Alt + Delete`、电源键等系统级操作不能由普通网页或应用完全禁用；严格封闭的拍摄设备需要配合 Windows Assigned Access、组策略或系统级 kiosk 模式。
+- `Ctrl + Alt + Shift + L` 会在当前服务内广播锁定或解锁全部在线投放端；控制面板的远程锁定按钮只作用于选中的设备或分组。
+- MP4 导出由本地 FFmpeg 完成。Windows 发布包内含 FFmpeg；macOS 会依次查找捆绑 FFmpeg、Homebrew 和系统 `PATH`。
 
-正式页面名为 `markerdeck-launch.html`（启动页）和 `markerdeck-screen.html`（控制端与投放端页面）。
+## 开发快速开始
 
-`markerdeck-screen.html` 只保留页面结构和按顺序加载的经典脚本引用，网页资产位于同一目录，支持 HTTP 服务和 `file://` 直接打开：
-
-- `markerdeck-base.css`：基础页面、投放画布、通用控件、导出工具和启动页样式。
-- `markerdeck-control.css`：控制端工作区、设备列表、分组和设备管理样式。
-- `markerdeck-mobile.css`：移动响应式规则、对话框和导出进度样式；三个 CSS 按此处列出的顺序加载，以保持原有级联结果。
-- `markerdeck-visual-state.js`：总体亮度默认值、状态 canonicalization、legacy RGB 折色与颜色计算。
-- `markerdeck-core.js`：DOM 引用、共享状态、存储兼容和状态读写。
-- `markerdeck-api.js`：HTTP、SSE、视频服务和设备协议调用。
-- `markerdeck-canvas.js`：画布尺寸、确定性绘制和设备缩略图。
-- `markerdeck-export.js`：PNG、ZIP、MP4 和文件保存流程。
-- `markerdeck-presets.js`：内置/自定义预设及移动端预设选择。
-- `markerdeck-devices.js`：设备列表、分组、选择和控制端设备设置。
-- `markerdeck-projection.js`：本地/投放/控制同步、锁定、三击退出和唤醒锁。
-- `markerdeck-settings.js`：画面参数按钮与设置变化协调。
-- `markerdeck-launcher.js`：启动页、服务信息和角色入口。
-- `markerdeck-bootstrap.js`：唯一装配入口，不持有业务状态。
-
-脚本使用 `window.MarkerDeck` 下的显式模块入口，不使用 bundler 或 ES module；Android 未来若需要离线复用网页资产，应整体复制这组同名 CSS/JS/HTML 文件并保留引用顺序，当前 APK 仍从用户选择的 MarkerDeck 服务地址加载投放页。
-
-手机必须使用启动页显示的局域网 IP 地址，不能使用 `localhost` 或 `127.0.0.1`。
-
-## 导出图片与视频
-
-- PNG 和 MP4 都使用界面中填写的最终像素尺寸，不受浏览器预览大小影响。
-- 当前画面和全部预设都可以批量导出。
-- MP4 时长范围为 0.1 到 3600 秒。
-- Windows 视频版已经包含 FFmpeg。
-- macOS 视频版会依次查找捆绑 FFmpeg、Homebrew FFmpeg 和系统 `PATH` 中的 FFmpeg。
-
-## 锁定说明
-
-网页和桌面客户端可以拦截常见的退出、刷新、返回与全屏快捷键，但普通应用无法完全屏蔽操作系统保留按键。
-
-- Windows 键、`Ctrl + Alt + Delete`、电源键等系统级操作不能由普通网页完全禁用。
-- 需要严格封闭的拍摄设备应配合 Windows Assigned Access、组策略或系统级 kiosk 模式。
-- `Ctrl + Alt + Shift + L` 会在当前服务内广播锁定或解锁全部在线投放端；同一设备打开多个投放页面时也会分别收到。
-- 控制面板中的远程锁定按钮仍只作用于当前选中的设备或分组。
-
-## 网络与隐私
-
-- 控制服务默认只在本机和当前局域网中运行。
-- 设备状态、控制指令和预设不需要上传到第三方云服务。
-- 请不要把服务端口直接暴露到公网。
-
-## 旧版本兼容
-
-v1.3.0 保留旧版 Chroma Cross 的迁移兼容：旧的 `/chroma-launch.html` 和 `/chroma-cross-screen.html` URL 会返回 302，并保留查询参数；服务端在新数据文件不存在时会回退读取 `CHROMA_*` 环境变量以及 `chroma-settings.json`、`chroma-presets.json`。页面读取旧的 `chromaCross*` 浏览器存储键后会写入新的 `markerdeck*` 键。之后通过 MarkerDeck 保存设置或预设时，会使用新的 `markerdeck-*` 文件名。
-
-## 开发与构建
-
-项目主要由原生 HTML/CSS/JavaScript、Node.js 本地服务和 Electron Windows 客户端组成；`android/` 是独立的 Android-first 工程。
-
-- 推荐 Node.js 24
-- Windows 客户端使用 Electron Builder 构建完整目录 ZIP
-- MP4 导出由 FFmpeg 完成
-- Android 已开始 MD-A09 Host MVP：设置页提供本地投放、连接局域网宿主、本机作为宿主三入口；内置宿主复用 `src/web` assets，提供控制页、LAN 地址/二维码、状态/SSE/锁命令闭环，并通过 `connectedDevice` 前台服务在 Activity 离开后继续运行。MD-A11 增加仅作用于投放 Activity 的 100% 窗口亮度、总体亮度、legacy RGB 折色和 SSE 暂断时的注册心跳锁定回退。Android 不提供 FFmpeg/MP4 导出，桌面 Node 服务继续保持视频能力。MD-A03 的普通投放生命周期恢复、真实设备、1 秒内恢复、连续 20 次循环和 OEM 差异验证仍待完成；尚不是正式 Android 客户端 Release
-- 生成的 ZIP、Node.js 和 FFmpeg 运行时不提交到普通 Git 历史，而是放入 GitHub Releases
-
-常用命令：
+项目使用原生 HTML/CSS/JavaScript、Node.js 本地服务、Electron Windows 客户端和独立 Android 工程。推荐 Node.js 24。
 
 ```bash
 npm start
-npm run check
-npm run package:mac
+npm test
+node scripts/check-project.js
 ```
 
-Android 工程使用独立的 Gradle Wrapper；需要 JDK 17 或更高版本，当前本机验证使用 Android Studio JBR 21：
+Android 工程需要 JDK 17 或更高版本：
 
 ```bash
 cd android
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-完整的 JDK、Android SDK、版本矩阵和输出路径见 [Android 开发与构建](android/README.md)。
+页面和服务端共享 `src/web`，发布 ZIP、Node.js 和 FFmpeg 运行时不提交到普通 Git 历史，而是由 GitHub Actions 组装并上传到 Release。完整的目录结构、资源加载顺序和发布流程见 [项目结构与架构](docs/architecture.md)。
 
-macOS 发布包名为 `markerdeck-macos-arm64-v<版本号>.zip`，Windows 浏览器服务端发布包名为 `markerdeck-windows-x64-v<版本号>.zip`。
+## 文档索引
 
-更多说明：
-
-- [项目结构](docs/architecture.md)
-- [macOS 使用说明](docs/macos.md)
+- [项目结构与架构](docs/architecture.md)
 - [Windows 使用说明](docs/windows.md)
+- [macOS 使用说明](docs/macos.md)
 - [Electron 桌面客户端](docs/desktop-client.md)
 - [视频导出](docs/video-export.md)
 - [版本与回滚](docs/rollback.md)
-- [改进路线](docs/improvement-roadmap.md)
 - [Android 开发与构建](android/README.md)
+- [改进路线](docs/improvement-roadmap.md)
+- [任务记录索引](docs/tasks/README.md)
 
 ## 许可
 

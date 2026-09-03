@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 整理 MD-A12 仓库主页与发布入口：以实际使用者为中心重写 README，补充四个平台下载说明、能力矩阵、网络与锁定边界、文档索引和任务记录。
+
 ## 1.5.0 - 2026-09-03
 
 - Added MD-A10 Android QR host scanning on the settings page with JourneyApps ZXing Embedded and Activity Result permission/scanner flows. Existing MarkerDeck launch, control, display, query, and bare IP values normalize to the service origin; invalid schemes/content, cancellation, camera denial, missing cameras, and scanner failures preserve the existing input and report status, while successful scans still require explicit user confirmation to connect.
