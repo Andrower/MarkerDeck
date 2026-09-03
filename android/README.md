@@ -1,6 +1,6 @@
 # MarkerDeck Android
 
-这是 MD-A09 Android Host MVP 与 MD-A03 普通投放恢复、MD-A08 局域网宿主发现和 Android 投放紧急退出实现。它是一个单 Activity 原生薄壳：设置/模式页提供本地投放、连接局域网宿主、本机作为宿主三个入口。实现不包含设备管理、专用设备/Kiosk、Foreground Service、Wake Lock 权限、精确闹钟、后台启动 Activity、辅助功能服务、overlay、root、隐藏 API 或绕过认证的机制。
+这是 MD-A09 Android Host MVP 与 MD-A03 普通投放恢复、MD-A08 局域网宿主发现和 Android 投放紧急退出实现。它是一个单 Activity 原生薄壳：设置/模式页提供本地投放、连接局域网宿主、本机作为宿主三个入口。内置宿主使用 `connectedDevice` 前台服务保持后台网络连接；实现不包含设备管理、专用设备/Kiosk、Wake Lock 权限、精确闹钟、后台启动 Activity、辅助功能服务、overlay、root、隐藏 API 或绕过认证的机制。
 
 ## 网页静态资源复用边界
 
@@ -9,10 +9,10 @@ APK 的内置宿主通过 Gradle `assets` sourceSet 直接引用仓库 `src/web`
 ## MD-A09 Android Host MVP
 
 - **本地投放**：启动只绑定 `127.0.0.1` 的内置 NanoHTTPD，加载 `http://127.0.0.1:<port>/markerdeck-screen.html?mode=local`，无需外部电脑即可显示和使用现有页面控制。
-- **本机作为宿主**：Activity 前台绑定 LAN 的内置服务，加载 localhost 控制页。控制页从 `/api/info` 获取本机 LAN 地址和 `/qr.svg`，同网浏览器/Android 被控端复用现有注册、状态、SSE、预设和锁命令协议。
-- **连接局域网宿主**：继续使用原地址、自动发现、设备名、普通 `display` WebView、屏幕恢复和三击退出流程。
+- **本机作为宿主**：启动绑定 LAN 的内置前台服务并加载 localhost 控制页。控制页从 `/api/info` 获取本机 LAN 地址和 `/qr.svg`，同网浏览器/Android 被控端复用现有注册、状态、SSE、预设和锁命令协议。
+- **连接局域网宿主**：继续使用原地址、自动发现、设备名、普通 `display` WebView、屏幕恢复和三击临时退出入口流程。
 - **能力边界**：Android `/api/info` 宣布 `videoExport: false`，网页隐藏视频导出；没有 FFmpeg/MP4 导出。桌面 Node 服务保持视频能力。
-- **生命周期**：内置服务只在 Activity 前台宿主流程中运行；返回设置、离开前台或销毁 Activity 会清理 HTTP、SSE、UDP responder 和多播锁。不承诺后台或锁屏持续托管，后续可靠性单列。
+- **生命周期与停止**：宿主启动后由 `MarkerDeckHostService` 以前台服务方式保持，返回桌面、锁屏、切换应用、Activity `onStop`/`onDestroy` 或从最近任务移除均不会主动停止。设置首页显示运行状态/地址并提供“停止内置宿主服务”，常驻通知也提供“停止服务”；Android 13 以上首次成功启动宿主后会请求一次通知权限，拒绝不会阻止服务运行，但通知栏入口可能不可见。显式停止、切换到远程宿主、普通本地投放退出和 `/api/shutdown` 会清理 HTTP、SSE、UDP responder、多播锁及通知。系统强制停止应用、设备关机或 OEM 强制终止进程仍会停止服务；系统允许 `START_STICKY` 恢复时会按已保存的宿主模式重新启动。
 
 内置服务 API 见 `AndroidHostServer.kt`，包括静态资源、`/api/info`、`/api/discovery`、`/qr.svg`、`/api/register`、`/api/devices`、`/api/state`、`/api/events`、预设、设备设置/清理、设备名称/分组、锁定/ACK 和 `/api/shutdown`。HTTP 状态为进程内，预设与宿主设置使用 SharedPreferences 持久化。
 
@@ -87,11 +87,11 @@ git diff --check
 - 设备名会限制为 40 个字符并作为编码后的 `androidDeviceName` 查询参数传给页面。页面将它写入既有 `localStorage`，因此 Android 不弹出网页设备名对话框；普通浏览器未提供该参数时仍保留原有对话框。
 - 配置重启后恢复，但应用不会自动进入投放；必须再次点击连接。应用始终使用普通投放。升级前遗留的 `mode` 配置会被忽略，不影响地址和设备名读取，并在下一次保存配置时删除。
 - WebView 仅开启 JavaScript 和 DOM Storage，关闭文件/内容访问；原生 JavaScript bridge 仅用于投放紧急控件的显示/隐藏通知。HTTP 局域网连接由 Manifest 的 `INTERNET` 权限和 cleartext 配置支持。
-- 活动投放页面沿用网页左上角三击解除锁定。只有该本机热区路径会通过最小 Android bridge 显示临时原生“退出投放”按钮；远程解锁和快捷键解锁不会显示它。bridge 只接受 `showEmergencyControls()`/`hideEmergencyControls()` 通知，没有退出 Activity 的方法。
+- 活动投放页面沿用网页左上角三击安全手势。最小 Android bridge 用 `showEmergencyExitWhileUnlocked()` 表示初始未锁定投放，用 `showEmergencyControls()` 表示“已锁定投放经本机手势解锁”，用 `showEmergencyControlsForUnlockedProjection()` 表示“原本未锁定投放经三击临时显示”，另接受 `hideEmergencyControls()`；bridge 没有退出 Activity 的方法，网页已有“锁定投放”按钮仍负责锁定。
 - 投放期间 WebView 顶层导航只允许已选择服务的同源地址；跨源或无效跳转会停止加载并显示错误。`about:blank` 只用于返回设置时清理页面；同源路径、API、SSE 和子资源请求不受此限制。
 - 投放页加载时显示加载状态；主框架服务不可达、HTTP 错误或 HTTPS 证书错误显示错误和“重试”。子资源失败不会把整个页面标为失败。
 - 投放期间启用沉浸式全屏和原生 `KEEP_SCREEN_ON`。活动投放中的系统返回键会被消费，不会返回页面、返回设置或结束 Activity；只有状态面板中的显式“返回设置”按钮会停止当前页面并清理全屏/常亮状态。设置页的系统返回仍会正常结束 Activity。
-- 设置页提供“打开系统权限设置”入口。小米/HyperOS 会优先尝试当前应用的 MIUI 权限编辑页，由用户手动开启“允许锁屏显示”（部分系统显示为“锁屏显示”）；同页若有“后台弹出界面”或“后台启动”，它们可能影响恢复，可按设备策略手动确认。MIUI 页面不可解析或启动失败，以及非小米设备，均回退到 `Settings.ACTION_APPLICATION_DETAILS_SETTINGS` 应用详情页。应用不声明新的标准运行时权限，也不会自动修改这些设置。
+- 设置页提供“打开系统权限设置”入口。首次进入设置且尚未处理引导时，如果锁屏显示状态未确认，会显示一次性的温和提示；点击“稍后”或打开系统页都会持久化处理状态，同一 Activity 生命周期不会重复弹出，系统设置返回后会刷新状态。小米/HyperOS 会优先尝试当前应用的 MIUI 权限编辑页，由用户手动开启“允许锁屏显示”（部分系统显示为“锁屏显示”）；同页若有“后台弹出界面”或“后台启动”，它们可能影响恢复，可按设备策略手动确认。公开 Android SDK 没有统一可读取的 OEM“锁屏显示”状态，因此 Xiaomi 状态显示为“无法自动确认”，其他不支持独立检查的系统温和降级为手动确认；MIUI 页面不可解析或启动失败，以及非小米设备，均回退到 `Settings.ACTION_APPLICATION_DETAILS_SETTINGS` 应用详情页。应用不声明新的标准运行时权限，也不会自动修改这些设置。
 - A02 的配置仍不会在普通冷启动时自动进入投放；只有本次明确连接产生的活动投放状态，才会通过 `savedInstanceState` 参与 Activity/进程重建恢复。
 
 ## MD-A08 局域网宿主发现
@@ -111,14 +111,15 @@ git diff --check
 - 动态屏幕/用户已出现接收器使用 Activity 注册，并在返回设置页或 Activity 销毁时解除注册；API 33 以上使用接收器导出标志，旧 API 使用兼容重载。没有进程级或 Manifest 接收器。
 - 设置页明确提示普通模式受系统安全锁限制，不能绕过认证，并提供手动打开系统权限页的入口。应用遵循 `KeyguardManager.isKeyguardLocked` 的系统锁屏状态，并在恢复或降级状态显示实际诊断；普通模式可以尝试在锁屏上显示界面，但不能跳过 PIN、图案、密码或生物识别认证。普通模式不会显示或宣称 Kiosk。
 - 活动投放中的 Android 13+ `OnBackInvokedCallback` 和旧版 `onBackPressed` 都消费系统返回事件，不改变页面、设置页或 Activity 状态；设置页仍按普通 Activity 行为结束。错误/状态面板保留显式“返回设置”按钮。
-- 离开投放进入设置或销毁 Activity 时，先清除 show-when-locked/turn-screen-on、API 26 兼容标志、`KEEP_SCREEN_ON` 和沉浸式状态，再显示设置页；WebView 计时器和动态接收器也会停止。
+- 离开投放进入设置或销毁 Activity 时，先清除 show-when-locked/turn-screen-on、API 26 兼容标志、`KEEP_SCREEN_ON` 和沉浸式状态，再显示设置页；WebView 计时器和动态接收器也会停止。宿主 HTTP/SSE/UDP 运行时与 Activity 分离，只有显式停止路径才会清理。
 
 ## Android 投放紧急退出
 
-- 本机三击左上角解除网页投放锁定后，Activity 在投放层底部显示一个至少 `48dp` 触控区域的原生“退出投放”按钮；按钮默认隐藏，不会持续覆盖绿幕。
-- 按钮点击复用现有 `showSettingsScreen()`，清理当前 WebView 投放并返回 Android 设置/模式入口；该路径不请求 `/api/shutdown`，也不停止未来的宿主服务。
-- 按钮显示后由 Android `Handler` 计时 `8` 秒。无操作超时会先隐藏按钮，再通过网页公开的单向 `markerdeckRelockProjection` hook 重新锁定页面；网页桥接不能直接结束 Activity。
-- 错误/加载面板显示时会清理紧急按钮，保留现有“返回设置”按钮，避免两个退出入口叠加。WebView renderer 重建、Activity 返回设置和销毁也会取消计时器。
+- 初次进入本地或远程投放页时，原生“退出投放”按钮会与未锁定的本地调整窗口同时显示；点击网页“锁定投放”后两者一起隐藏。本机三击左上角在未锁定投放时仍能临时重新调出按钮；锁定后的三击仍先解除网页投放锁定，再显示同一按钮。按钮至少有 `48dp` 触控区域。
+- 原生“退出投放”先要求确认，确认后复用现有 `showSettingsScreen()`，清理当前 WebView 投放并返回 Android 设置/模式入口。该路径不请求 `/api/shutdown`，也不停止未来的宿主服务；网页中的“锁定投放”按钮仍是唯一锁定入口。
+- 按钮显示后由 Android `Handler` 计时 `8` 秒：已锁定投放经本机三击解锁后显示的按钮，无操作超时会先隐藏按钮，再通过网页公开的单向 `markerdeckRelockProjection` hook 重新锁定；原本未锁定投放经三击显示的按钮，超时只隐藏按钮，不改变网页锁定状态。退出确认弹窗显示期间暂停计时，取消后重新计时，确认退出会清理投放；网页桥接不能直接结束 Activity。
+- 错误/加载面板显示时会清理紧急退出按钮，保留现有“返回设置”按钮，避免两个退出入口叠加。WebView renderer 重建、Activity 返回设置和销毁也会取消计时器。
+- 设置页内容会在保留 XML 基础 padding 的前提下，按系统 status-bar 和 display-cutout 顶部安全区动态增加 padding；重复应用 Insets 不会累加，投放页的沉浸式全屏行为不变。
 
 锁屏恢复是普通 Android 应用边界内的尽力行为：只有用户已经点击连接并进入实际投放页、Activity 仍在前台或任务中时，应用才会重新申请投放窗口的 show-when-locked、turn-screen-on、`KEEP_SCREEN_ON` 和沉浸式状态。进程被系统杀死、用户 force-stop、系统禁止后台启动或 OEM 安全锁策略限制时，不保证自动拉起 Activity，也不保证覆盖系统锁屏。
 
@@ -132,9 +133,12 @@ P0 目标是系统向 Activity 交付 resume/screen-on 回调后，目标在 `<=
 - 输入空值、`ftp://`、无主机、端口 `0`、端口 `65536`，确认错误可见且不会进入 WebView；输入裸 IP、`IP:端口` 和 `localhost:端口`，确认自动补 `http://`。
 - 在同一局域网启动服务端，确认一个宿主会自动填入空地址；启动多个服务端，确认列表可选择且不会覆盖已有/正在编辑的地址；切换网络或离开设置页后确认扫描停止，返回后可刷新。
 - 输入可访问的 `http://` MarkerDeck 服务、设备名，点击连接，确认页面进入全屏、保持常亮、服务端设备列表显示该名称。
+- 分别启动本地投放和本机作为宿主，确认设置首页的内置宿主状态显示“运行中”和地址；点击“停止内置宿主服务”后停留在设置页并显示“已停止”，远程宿主地址和发现列表不被清除。
+- 在本机作为宿主时返回设置、回到桌面、锁屏和切换应用，使用同网设备确认服务地址仍可访问；重新打开应用后确认宿主仍显示运行中。分别从设置页和常驻通知点击停止，确认 HTTP、SSE、UDP responder、多播锁及通知均被清理。
 - 确认含空格、符号或非 ASCII 字符的设备名能正常显示，并且页面没有弹出设备名对话框。
 - 停止服务后点击连接或重试，确认主页面显示“服务不可达或投放页面加载失败”或 HTTP 错误及“重试”。恢复服务后点击重试。
 - 在设置页点击“打开系统权限设置”，确认小米/HyperOS 优先进入 MarkerDeck 的 MIUI 权限编辑页；若不可用则进入应用详情页，并手动检查“允许锁屏显示”（或“锁屏显示”）。如有“后台弹出界面”或“后台启动”，按设备策略决定是否开启。
+- 在首次进入设置时确认锁屏显示引导只出现一次；选择“稍后”后同一 Activity 不再重复，重新启动应用后按持久化处理状态不再强制弹出；打开系统设置返回后确认设置页状态文字已刷新。
 - 在显示页按系统返回键，确认仍停留在投放页且页面、设置页和 Activity 均未返回；通过状态面板的显式“返回设置”按钮离开后，确认系统栏恢复、屏幕不再被原生常亮标志保持。
 - 退出并重新启动应用，确认地址和设备名恢复，但不会自动连接；重新连接后仍进入普通投放。
 - 在常见竖屏、横屏和较小手机尺寸检查输入、状态面板和操作按钮不重叠。

@@ -15,6 +15,7 @@
         android:overScrollMode="never">
 
         <LinearLayout
+            android:id="@+id/settingsContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -131,6 +132,40 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="@string/embedded_host_status_label"
+                android:textColor="@color/markerdeck_foreground"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/embeddedHostStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:maxLines="3"
+                android:ellipsize="end"
+                android:text="@string/embedded_host_stopped_status"
+                android:textColor="@color/markerdeck_muted"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/stopEmbeddedHostButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/markerdeck_secondary_button"
+                android:minHeight="52dp"
+                android:text="@string/embedded_host_stop_disabled"
+                android:textAllCaps="false"
+                android:textColor="@color/markerdeck_foreground"
+                android:textSize="14sp"
+                tools:ignore="ButtonStyle" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
                 android:text="@string/service_address_label"
                 android:textColor="@color/markerdeck_foreground"
                 android:textSize="14sp"
@@ -259,6 +294,15 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/lock_screen_permission_helper"
+                android:textColor="@color/markerdeck_muted"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/lockScreenPermissionStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/lock_screen_permission_status_unknown"
                 android:textColor="@color/markerdeck_muted"
                 android:textSize="12sp" />
 
@@ -404,7 +448,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="top|end"
             android:layout_marginEnd="16dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="88dp"
             android:background="@drawable/markerdeck_secondary_button"
             android:elevation="8dp"
             android:minWidth="120dp"

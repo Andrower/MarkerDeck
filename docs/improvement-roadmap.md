@@ -149,19 +149,19 @@
 
 - **范围**：服务端在固定 UDP `8766` 端口提供版本化 `markerdeck` 广播/多播响应，返回名称、HTTP 端口、HTTP origin、实例 ID 和 nonce；Android 设置页在 Wi-Fi/以太网前台执行短时扫描，获取候选后通过候选源地址的 `/api/discovery` HTTP 握手校验，再展示或建议填入宿主。手动地址继续接受裸 IP、`IP:端口`、`localhost:端口` 和完整 HTTP(S) 地址。
 - **安全与边界**：不做全网端口扫描、公网发现、后台持续扫描或未经校验的导航；仅接受协议版本、nonce、实例、端口、HTTP origin 和局域网 IPv4 均匹配的响应，并使用观测到的 UDP 对端地址生成最终服务 origin。nonce 不是认证机制，现场仍需可信局域网和现有 URL/cleartext 约束。
-- **产物**：UDP 发现服务、HTTP nonce 握手端点、Android 发现状态/刷新/多宿主选择 UI、网络回调和多播锁生命周期处理、地址标准化及发现响应/状态归并纯逻辑测试、构建与现场验收清单。
-- **验收标准**：一个宿主自动填入空且未编辑的字段；多个宿主可点击选择；刷新、网络切换、Activity 暂停/恢复和发现失败不泄漏回调、不覆盖用户输入并回退手动输入；现有投放 URL 拼接、同源校验和 v1.3.0 HTTP/SSE 行为不回归。
+- **产物**：UDP 发现服务、HTTP nonce 握手端点、Android 发现状态/刷新/多宿主选择 UI、电脑 Node 主动扫描器与启动页宿主列表、网络回调和多播锁生命周期处理、地址标准化及发现响应/状态归并纯逻辑测试、构建与现场验收清单。
+- **验收标准**：一个宿主自动填入空且未编辑的字段；多个宿主可点击选择；电脑启动页能扫描、验证并打开手机或其他电脑宿主且不列出自身；刷新、网络切换、Activity 暂停/恢复和发现失败不泄漏回调、不覆盖用户输入并回退手动输入；现有投放 URL 拼接、同源校验和 v1.3.0 HTTP/SSE 行为不回归。
 - **依赖**：MD-A01、MD-A02；需要可访问的同一局域网服务端、Android Wi-Fi/以太网设备和多宿主/网络切换测试环境。
 
 #### MD-A09 Android Host MVP 前台宿主
 
-状态：第一纵切实现中；本阶段只承诺 Activity 前台宿主，不是 Foreground Service，也不保证后台或锁屏持续托管。
+状态：后台宿主纵切已实现；使用 `connectedDevice` 前台服务保持 HTTP/SSE/UDP 与多播锁，仍待真实设备长时间和 OEM 后台策略验证。
 
-- **范围**：在 Android 设置/模式入口明确提供“本地投放”“连接局域网宿主”“本机作为宿主”三个互不重叠的入口。前者启动只绑定 loopback 的内置 HTTP 服务并加载 `127.0.0.1` 投放页；后者在 Activity 前台绑定 LAN HTTP 服务并加载 localhost 控制页，控制页通过 `/api/info` 显示本机 LAN 地址和二维码。同网浏览器或 Android 被控端可以使用现有网页注册、状态同步、SSE 和锁定命令闭环。
+- **范围**：在 Android 设置/模式入口明确提供“本地投放”“连接局域网宿主”“本机作为宿主”三个互不重叠的入口。前者启动只绑定 loopback 的内置 HTTP 服务并加载 `127.0.0.1` 投放页；后者启动 LAN HTTP 服务并加载 localhost 控制页，控制页通过 `/api/info` 显示本机 LAN 地址和二维码。同网浏览器或 Android 被控端可以使用现有网页注册、状态同步、SSE 和锁定命令闭环。
 - **资产与协议**：Android Gradle `assets` sourceSet 直接引用 `src/web`，不复制第二份 HTML/CSS/经典 JS，并保留既有加载顺序、`file://` 行为和桌面 Node 服务。内置服务采用 NanoHTTPD 和 ZXing core，覆盖静态资源、`/api/info`、发现、注册/设备、状态、SSE、预设、设备名称/分组/清理、锁定/ACK、`/qr.svg` 和 `/api/shutdown`；Android `/api/video*` 明确返回 unsupported，桌面 Node 服务继续提供 FFmpeg 视频能力。
-- **生命周期与清理**：宿主服务、SSE 客户端、设备连接和发现 responder 的运行状态以进程内为主；自定义预设和宿主名称/保留设置持久化。返回设置、Activity 离开前台或销毁时停止服务、SSE、UDP responder 和多播锁；不引入 Node Android runtime，不承诺后台常驻。可靠性、后台限制和锁屏行为另列后续任务，不作为本阶段支持声明。
+- **生命周期与清理**：宿主控制器由进程级运行时持有，`MarkerDeckHostService` 以 `connectedDevice` 类型前台服务维持 HTTP/SSE/UDP、多播锁和低优先级常驻通知。Activity 离开、销毁或从最近任务移除不主动停止；设置页、通知、切换远程宿主与 `/api/shutdown` 可显式清理。服务保存期望模式供系统 `START_STICKY` 重启使用，但不声称能绕过 force-stop、关机或 OEM 强制终止。
 - **产物**：模式入口 UI、共享 assets sourceSet、`AndroidHostServer`、纯状态/store、SSE hub、UDP responder、二维码生成器和 `HostLifecycleController`；补充 URL/模式决策、协议响应、状态/预设/锁命令及 HTTP 层 JVM 测试、结构检查和构建验收。
-- **验收标准**：小屏设置页三个入口垂直排列且不重叠；本地投放无需外部电脑即可显示绿幕并响应当前页面控制；本机宿主控制页显示 LAN 地址/二维码，同网浏览器和被控端可注册并完成一次画面状态同步与锁定 ACK；远程连接、自动发现、设备名、普通 WebView 投放、锁屏恢复和三击退出流程不回归；宿主离开 Activity 前台后服务明确停止。
+- **验收标准**：小屏设置页三个入口垂直排列且不重叠；本地投放无需外部电脑即可显示绿幕并响应当前页面控制；本机宿主控制页显示 LAN 地址/二维码，同网浏览器和被控端可注册并完成一次画面状态同步与锁定 ACK；远程连接、自动发现、设备名、普通 WebView 投放、锁屏恢复和三击退出流程不回归；宿主在 Activity 离开前台、销毁及最近任务移除后仍可从同网设备访问，并能从设置页和常驻通知明确停止。
 - **依赖**：MD-A01、MD-A02、MD-A03、MD-A08；需要 Android Studio JBR/SDK、同网浏览器或另一 Android 被控端完成现场闭环验证。
 
 ### 5. 关键门禁与共同验收

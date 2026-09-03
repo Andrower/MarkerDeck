@@ -9,6 +9,8 @@
 *.apk
 artifacts/
 outputs/
+output/
+.playwright-cli/
 
 # Dependency folders
 node_modules/

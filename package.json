@@ -5,8 +5,8 @@
   "description": "MarkerDeck LAN visual effects screen controller",
   "scripts": {
     "start": "node src/markerdeck-server.js",
-    "test": "node --test tests/server.test.js",
-    "check": "node scripts/check-project.js && node --test tests/server.test.js",
+    "test": "node --test tests/host-discovery.test.js tests/server.test.js",
+    "check": "node scripts/check-project.js && node --test tests/host-discovery.test.js tests/server.test.js",
     "package:mac": "zsh scripts/package-macos.sh",
     "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1",
     "desktop:install": "pnpm --dir desktop/electron install --frozen-lockfile",

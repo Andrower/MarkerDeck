@@ -76,7 +76,6 @@
     blackoutBtn: byId("blackoutBtn"),
     copyAddressBtn: byId("copyAddressBtn"),
     copyControlUrlBtn: byId("copyControlUrlBtn"),
-    openControlUrlBtn: byId("openControlUrlBtn"),
     localModeBtn: byId("localModeBtn"),
     displayModeBtn: byId("displayModeBtn"),
     controlModeBtn: byId("controlModeBtn"),

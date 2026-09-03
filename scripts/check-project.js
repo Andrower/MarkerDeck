@@ -29,6 +29,7 @@ const requiredFiles = [
   "README.md",
   "LICENSE",
   "src/markerdeck-server.js",
+  "src/markerdeck-host-discovery.js",
   "src/web/markerdeck-screen.html",
   "src/web/markerdeck-launch.html",
   ...screenAssets,
@@ -36,7 +37,8 @@ const requiredFiles = [
   "desktop/electron/preload.js",
   "desktop/electron/package.json",
   "platform/macos/start-markerdeck-server.command",
-  "platform/windows/start-markerdeck-server.bat"
+  "platform/windows/start-markerdeck-server.bat",
+  "tests/host-discovery.test.js"
 ];
 
 const androidRequiredFiles = [
@@ -60,6 +62,8 @@ const androidRequiredFiles = [
   "android/app/src/main/kotlin/com/andrower/markerdeck/SettingsRepository.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/AndroidHostServer.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/HostLifecycleController.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/MarkerDeckHostRuntime.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/MarkerDeckHostService.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/HostMode.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/HostNetworkAddress.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/HostPreferencesPersistence.kt",
@@ -104,6 +108,19 @@ assert.match(androidBuild, /assets\.srcDir\(rootProject\.file\("\.\.\/src\/web"\
 assert.match(androidBuild, /org\.nanohttpd:nanohttpd:/, "Android host must use NanoHTTPD");
 assert.match(androidBuild, /com\.google\.zxing:core:/, "Android host must use ZXing core");
 
+const androidManifest = fs.readFileSync(
+  path.join(root, "android/app/src/main/AndroidManifest.xml"),
+  "utf8"
+);
+assert.match(androidManifest, /android\.permission\.FOREGROUND_SERVICE"/,
+  "Android host must declare the base foreground-service permission");
+assert.match(androidManifest, /android\.permission\.FOREGROUND_SERVICE_CONNECTED_DEVICE"/,
+  "Android host must declare the connected-device foreground-service permission");
+assert.match(androidManifest, /android\.permission\.POST_NOTIFICATIONS"/,
+  "Android host notification stop action must declare notification permission");
+assert.match(androidManifest, /android:name="\.MarkerDeckHostService"[\s\S]*?android:foregroundServiceType="connectedDevice"/,
+  "Android host service must use the connectedDevice foreground-service type");
+
 const javascriptFiles = [
   "src/markerdeck-server.js",
   "desktop/electron/main.js",
@@ -119,6 +136,16 @@ javascriptFiles.forEach((relativePath) => {
 ["package.json", "desktop/electron/package.json"].forEach((relativePath) => {
   JSON.parse(fs.readFileSync(path.join(root, relativePath), "utf8"));
 });
+
+const electronPackage = JSON.parse(
+  fs.readFileSync(path.join(root, "desktop/electron/package.json"), "utf8")
+);
+const electronServerResources = electronPackage.build.extraResources
+  .find((resource) => resource.to === "server")?.filter || [];
+assert.ok(
+  electronServerResources.includes("markerdeck-host-discovery.js"),
+  "Electron package must include the desktop host discovery module"
+);
 
 const htmlFiles = [
   "src/web/markerdeck-screen.html",

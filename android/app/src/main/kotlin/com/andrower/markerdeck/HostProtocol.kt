@@ -35,13 +35,15 @@ data class HostCapabilities(
     val videoExport: Boolean = false,
     val pngExport: Boolean = true,
     val sse: Boolean = true,
-    val udpDiscovery: Boolean = true
+    val udpDiscovery: Boolean = true,
+    val hostDiscovery: Boolean = false
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("videoExport", videoExport)
         .put("pngExport", pngExport)
         .put("sse", sse)
         .put("udpDiscovery", udpDiscovery)
+        .put("hostDiscovery", hostDiscovery)
 }
 
 data class HostInfo(

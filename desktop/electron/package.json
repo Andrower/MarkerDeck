@@ -27,6 +27,7 @@
         "to": "server",
         "filter": [
           "markerdeck-server.js",
+          "markerdeck-host-discovery.js",
           "web/**"
         ]
       },

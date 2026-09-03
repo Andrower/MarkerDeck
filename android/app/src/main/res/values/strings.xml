@@ -8,7 +8,19 @@
     <string name="lan_host_mode">本机作为宿主</string>
     <string name="host_name_label">宿主名称</string>
     <string name="host_name_hint">例如：摄影棚主控</string>
-    <string name="host_name_helper">局域网浏览器和被控端会看到这个名称；服务只在 Activity 前台运行。</string>
+    <string name="host_name_helper">局域网浏览器和被控端会看到这个名称；启动后会通过前台服务保持后台运行。</string>
+    <string name="embedded_host_status_label">内置宿主服务</string>
+    <string name="embedded_host_stopped_status">状态：已停止。普通投放和连接局域网宿主不受影响。</string>
+    <string name="embedded_host_running_status">状态：运行中&#10;地址：%1$s</string>
+    <string name="embedded_host_stop_disabled">内置宿主服务已停止</string>
+    <string name="stop_embedded_host">停止内置宿主服务</string>
+    <string name="stop_embedded_host_short">停止服务</string>
+    <string name="stopping_embedded_host">正在停止内置宿主服务&#8230;</string>
+    <string name="host_notification_channel">MarkerDeck 宿主服务</string>
+    <string name="host_notification_channel_description">保持局域网控制与投放连接</string>
+    <string name="host_notification_title">MarkerDeck 宿主正在运行</string>
+    <string name="host_notification_starting">正在启动局域网宿主服务</string>
+    <string name="host_notification_running">服务地址：%1$s</string>
     <string name="service_address_label">MarkerDeck 服务地址</string>
     <string name="service_address_hint">例如 192.168.1.2:8765</string>
     <string name="service_address_helper">可输入 IP、IP:端口、localhost:端口或完整 HTTP(S) 地址。</string>
@@ -26,6 +38,15 @@
     <string name="device_name_helper">名称会传给投放页面并用于控制端识别</string>
     <string name="settings_security_note">普通模式受系统安全锁限制，不能绕过 PIN、图案、密码或生物识别认证。</string>
     <string name="lock_screen_permission_helper">小米/HyperOS 请在下面的系统权限页手动开启“允许锁屏显示”（部分系统显示为“锁屏显示”）。如果同页提供“后台弹出界面”或“后台启动”，它们可能影响灭屏后的恢复，请按需手动确认；MarkerDeck 不会自动修改这些设置。非小米设备将打开应用详情页。</string>
+    <string name="lock_screen_permission_status_granted">状态：已允许锁屏显示。</string>
+    <string name="lock_screen_permission_status_denied">状态：未允许锁屏显示。</string>
+    <string name="lock_screen_permission_status_unknown">状态：无法自动确认，请在系统权限页检查“允许锁屏显示”。</string>
+    <string name="lock_screen_permission_status_unsupported">状态：当前系统不提供可读取的独立状态；如系统有该开关，请手动确认。</string>
+    <string name="lock_screen_permission_guide_title">设置锁屏显示</string>
+    <string name="lock_screen_permission_guide_message_denied">为了在锁屏时恢复普通投放，请在系统权限页允许 MarkerDeck“锁屏显示”。MarkerDeck 不会自动修改权限，也不能绕过 PIN、图案、密码或生物识别认证。</string>
+    <string name="lock_screen_permission_guide_message_unknown">首次使用普通投放时，建议在系统权限页确认 MarkerDeck“允许锁屏显示”。当前系统无法让应用自动读取此状态，请手动确认；这不会绕过 PIN、图案、密码或生物识别认证。</string>
+    <string name="lock_screen_permission_guide_message_unsupported">当前系统没有可读取的锁屏显示权限状态。可以打开系统权限设置查看；如果找不到该开关，选择稍后即可。普通投放仍遵循系统规则，不能绕过认证。</string>
+    <string name="lock_screen_permission_later">稍后</string>
     <string name="open_lock_screen_settings">打开系统权限设置</string>
     <string name="system_settings_unavailable">系统权限设置页面不可用，请在系统设置中打开 MarkerDeck 的应用详情并手动开启“允许锁屏显示”（或“锁屏显示”）。</string>
     <string name="connect">连接并开始投放</string>
@@ -37,7 +58,6 @@
     <string name="starting_lan_host">正在启动局域网宿主&#8230;</string>
     <string name="host_start_failed">内置宿主启动失败。</string>
     <string name="host_stopped">宿主服务已停止。</string>
-    <string name="host_stopped_foreground_only">Activity 已离开前台，宿主服务已停止。</string>
     <string name="invalid_address">服务地址无效。</string>
     <string name="device_name_required">请输入设备名称。</string>
     <string name="display_loading">正在加载投放页面&#8230;</string>
@@ -50,4 +70,7 @@
     <string name="retry">重试</string>
     <string name="back_to_settings">返回设置</string>
     <string name="emergency_exit_projection">退出投放</string>
+    <string name="emergency_exit_projection_title">退出投放</string>
+    <string name="emergency_exit_projection_message">将停止当前投放并返回设置。确定退出吗？</string>
+    <string name="cancel">取消</string>
 </resources>

@@ -43,13 +43,28 @@
     }
   }
 
-  function notifyAndroidEmergencyControls(visible) {
+  function invokeAndroidEmergencyControl(methodName) {
     const bridge = global.markerdeckAndroid;
     if (!bridge) return;
     try {
-      if (visible) bridge.showEmergencyControls?.();
-      else bridge.hideEmergencyControls?.();
+      bridge[methodName]?.();
     } catch (_) {}
+  }
+
+  function hideAndroidEmergencyControls() {
+    invokeAndroidEmergencyControl("hideEmergencyControls");
+  }
+
+  function showAndroidEmergencyControlsAfterLocalUnlock() {
+    invokeAndroidEmergencyControl("showEmergencyControls");
+  }
+
+  function showAndroidEmergencyControlsForUnlockedProjection() {
+    invokeAndroidEmergencyControl("showEmergencyControlsForUnlockedProjection");
+  }
+
+  function showAndroidEmergencyExitWhileUnlocked() {
+    invokeAndroidEmergencyControl("showEmergencyExitWhileUnlocked");
   }
 
   function pushExitGuard() {
@@ -61,7 +76,7 @@
   async function lockProjection(options = {}) {
     state.lockedByRemote = !!options.remote;
     state.locked = true;
-    notifyAndroidEmergencyControls(false);
+    hideAndroidEmergencyControls();
     document.activeElement?.blur?.();
     global.chromaDesktop?.setProjectionLocked?.(true);
     document.body.classList.add("locked");
@@ -84,7 +99,7 @@
     state.lockedByRemote = false;
     state.locked = false;
     state.deviceForceLock = "0";
-    notifyAndroidEmergencyControls(false);
+    hideAndroidEmergencyControls();
     global.chromaDesktop?.setProjectionLocked?.(false);
     document.body.classList.remove("locked");
     dom.lockBtn.textContent = "锁定投放";
@@ -100,7 +115,7 @@
       state.wakeLock = null;
     }
     app.canvas.render();
-    if (localEmergency && !state.locked) notifyAndroidEmergencyControls(true);
+    if (localEmergency && !state.locked) showAndroidEmergencyControlsAfterLocalUnlock();
     if (state.role === "display") await publishState();
   }
 
@@ -296,6 +311,9 @@
     document.body.classList.toggle("control-mode", state.role === "control");
     dom.launcher.classList.add("hidden");
     stopSync();
+    if (state.role === "local" || state.role === "display") {
+      showAndroidEmergencyExitWhileUnlocked();
+    }
     if (state.role === "local") {
       updateStatus("本地");
     }
@@ -349,9 +367,10 @@
       state.cornerTimer = setTimeout(() => {
         state.cornerTapCount = 0;
       }, 850);
-      if (state.cornerTapCount >= 3 && state.locked) {
+      if (state.cornerTapCount >= 3) {
         state.cornerTapCount = 0;
-        unlockProjection({ localEmergency: true });
+        if (state.locked) unlockProjection({ localEmergency: true });
+        else showAndroidEmergencyControlsForUnlockedProjection();
       }
     });
     global.chromaDesktop?.onProjectionLockHotkey?.(() => {

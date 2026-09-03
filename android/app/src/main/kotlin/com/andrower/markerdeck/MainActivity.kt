@@ -1,13 +1,16 @@
 package com.andrower.markerdeck
 
+import android.Manifest
 import android.app.Activity
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.app.KeyguardManager
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
@@ -55,11 +58,16 @@ class MainActivity : Activity() {
         private const val STATE_DEVICE_NAME = "projection_device_name"
         private const val EMERGENCY_CONTROLS_TIMEOUT_MS = 8_000L
         private const val ANDROID_PROJECTION_BRIDGE_NAME = "markerdeckAndroid"
+        private const val HOST_NOTIFICATION_PERMISSION_REQUEST = 8765
+        private const val HOST_NOTIFICATION_PERMISSION_PREFERENCES = "markerdeck_permissions"
+        private const val HOST_NOTIFICATION_PERMISSION_REQUESTED = "host_notification_requested"
         private const val SAFE_RELOCK_SCRIPT =
             "window.markerdeckRelockProjection && window.markerdeckRelockProjection();"
     }
 
     private lateinit var settingsScreen: View
+    private lateinit var settingsContent: View
+    private lateinit var settingsContentBasePadding: SettingsContentPadding
     private lateinit var displayScreen: View
     private lateinit var serviceAddressInput: EditText
     private lateinit var deviceNameInput: EditText
@@ -67,6 +75,9 @@ class MainActivity : Activity() {
     private lateinit var discoveryHostsList: LinearLayout
     private lateinit var refreshDiscoveryButton: Button
     private lateinit var settingsStatus: TextView
+    private lateinit var embeddedHostStatusText: TextView
+    private lateinit var stopEmbeddedHostButton: Button
+    private lateinit var lockScreenPermissionStatusText: TextView
     private lateinit var systemPermissionSettingsButton: Button
     private lateinit var connectButton: Button
     private lateinit var localProjectionButton: Button
@@ -119,6 +130,11 @@ class MainActivity : Activity() {
     private var webViewLayoutParams: ViewGroup.LayoutParams? = null
     private var cleanupNavigationPending = false
     private var settingsStatusOverride: String? = null
+    private var embeddedHostControlsEnabled = true
+    private var lockScreenPermissionStatus = LockScreenPermissionStatus.UNKNOWN
+    private var lockScreenPermissionGuideStateLoaded = false
+    private var lockScreenPermissionGuideHandled = false
+    private var lockScreenPermissionGuideShownThisActivity = false
 
     private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -135,16 +151,11 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         settingsRepository = SettingsRepository(applicationContext.markerdeckDataStore)
-        hostLifecycleController = HostLifecycleController(applicationContext) {
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
-                    showSettingsScreen()
-                    showSettingsError(getString(R.string.host_stopped))
-                }
-            }
-        }
+        hostLifecycleController = MarkerDeckHostRuntime.controller(applicationContext)
         bindViews()
         hostNameInput.setText(hostLifecycleController.hostName())
+        refreshLockScreenPermissionStatus()
+        renderEmbeddedHostUi()
         configureWebView(webView)
         bindActions()
         discoveryScanner = MarkerDeckDiscoveryScanner(
@@ -206,6 +217,14 @@ class MainActivity : Activity() {
 
     private fun bindViews() {
         settingsScreen = findViewById(R.id.settingsScreen)
+        settingsContent = findViewById(R.id.settingsContent)
+        settingsContentBasePadding = SettingsContentPadding(
+            start = settingsContent.paddingStart,
+            top = settingsContent.paddingTop,
+            end = settingsContent.paddingEnd,
+            bottom = settingsContent.paddingBottom
+        )
+        configureSettingsWindowInsets()
         displayScreen = findViewById(R.id.displayScreen)
         serviceAddressInput = findViewById(R.id.serviceAddressInput)
         deviceNameInput = findViewById(R.id.deviceNameInput)
@@ -213,6 +232,9 @@ class MainActivity : Activity() {
         discoveryHostsList = findViewById(R.id.discoveryHostsList)
         refreshDiscoveryButton = findViewById(R.id.refreshDiscoveryButton)
         settingsStatus = findViewById(R.id.settingsStatus)
+        embeddedHostStatusText = findViewById(R.id.embeddedHostStatus)
+        stopEmbeddedHostButton = findViewById(R.id.stopEmbeddedHostButton)
+        lockScreenPermissionStatusText = findViewById(R.id.lockScreenPermissionStatus)
         systemPermissionSettingsButton = findViewById(R.id.systemPermissionSettingsButton)
         connectButton = findViewById(R.id.connectButton)
         localProjectionButton = findViewById(R.id.localProjectionButton)
@@ -259,6 +281,43 @@ class MainActivity : Activity() {
 
             override fun afterTextChanged(s: Editable?) = Unit
         })
+    }
+
+    @Suppress("DEPRECATION")
+    private fun configureSettingsWindowInsets() {
+        val root = findViewById<View>(R.id.root)
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val statusBarsTopInset = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                maxOf(
+                    insets.getInsets(WindowInsets.Type.statusBars()).top,
+                    insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
+                )
+            } else {
+                insets.systemWindowInsetTop
+            }
+            val displayCutoutTopInset = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    insets.getInsets(WindowInsets.Type.displayCutout()).top
+                } else {
+                    insets.displayCutout?.safeInsetTop ?: 0
+                }
+            } else {
+                0
+            }
+            val padding = settingsContentPaddingForTopInset(
+                base = settingsContentBasePadding,
+                statusBarsTopInset = statusBarsTopInset,
+                displayCutoutTopInset = displayCutoutTopInset
+            )
+            settingsContent.setPaddingRelative(
+                padding.start,
+                padding.top,
+                padding.end,
+                padding.bottom
+            )
+            insets
+        }
+        root.requestApplyInsets()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -482,11 +541,15 @@ class MainActivity : Activity() {
         hostModeButton.setOnClickListener {
             startEmbeddedHost(EmbeddedHostMode.LAN_HOST)
         }
-        systemPermissionSettingsButton.setOnClickListener { openSystemPermissionSettings() }
+        stopEmbeddedHostButton.setOnClickListener { stopEmbeddedHostFromSettings() }
+        systemPermissionSettingsButton.setOnClickListener {
+            markLockScreenPermissionGuideHandled()
+            openSystemPermissionSettings()
+        }
         refreshDiscoveryButton.setOnClickListener { discoveryScanner.refresh() }
         retryButton.setOnClickListener { loadDisplayPage() }
-        backToSettingsButton.setOnClickListener { showSettingsScreen() }
-        emergencyExitButton.setOnClickListener { showSettingsScreen() }
+        backToSettingsButton.setOnClickListener { returnToSettingsFromDisplay() }
+        emergencyExitButton.setOnClickListener { confirmExitProjection() }
     }
 
     private inner class ProjectionJavascriptBridge(
@@ -496,7 +559,23 @@ class MainActivity : Activity() {
         fun showEmergencyControls() {
             dispatchEmergencyControlEvent(
                 sourceWebView,
-                ProjectionEmergencyControlEvent.SHOW_REQUESTED
+                ProjectionEmergencyControlEvent.SHOW_REQUESTED_WITH_RELOCK
+            )
+        }
+
+        @JavascriptInterface
+        fun showEmergencyControlsForUnlockedProjection() {
+            dispatchEmergencyControlEvent(
+                sourceWebView,
+                ProjectionEmergencyControlEvent.SHOW_REQUESTED_HIDE_ONLY
+            )
+        }
+
+        @JavascriptInterface
+        fun showEmergencyExitWhileUnlocked() {
+            dispatchEmergencyControlEvent(
+                sourceWebView,
+                ProjectionEmergencyControlEvent.SHOW_REQUESTED_PERSISTENT
             )
         }
 
@@ -525,9 +604,29 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun confirmExitProjection() {
+        if (!displayActive) return
+        cancelEmergencyControlsTimeout()
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.emergency_exit_projection_title)
+            .setMessage(R.string.emergency_exit_projection_message)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.emergency_exit_projection) { _, _ ->
+                if (!isFinishing && !isDestroyed) showSettingsScreen()
+            }
+            .create()
+        dialog.setOnDismissListener {
+            if (displayActive && emergencyControlsState.hasTimeout()) {
+                scheduleEmergencyControlsTimeout()
+            }
+        }
+        dialog.show()
+    }
+
     private fun applyEmergencyControlEvent(event: ProjectionEmergencyControlEvent) {
         val effectiveEvent = if (
-            event == ProjectionEmergencyControlEvent.SHOW_REQUESTED &&
+            (event == ProjectionEmergencyControlEvent.SHOW_REQUESTED_HIDE_ONLY ||
+                event == ProjectionEmergencyControlEvent.SHOW_REQUESTED_WITH_RELOCK) &&
             displayStatusPanel.visibility == View.VISIBLE
         ) {
             ProjectionEmergencyControlEvent.HIDE_REQUESTED
@@ -541,7 +640,7 @@ class MainActivity : Activity() {
         )
         emergencyControlsState = decision.state
         emergencyExitButton.visibility = if (decision.state.visible) View.VISIBLE else View.GONE
-        if (decision.state.visible) {
+        if (decision.state.hasTimeout()) {
             scheduleEmergencyControlsTimeout()
         } else {
             cancelEmergencyControlsTimeout()
@@ -573,6 +672,9 @@ class MainActivity : Activity() {
         emergencyControlsTimeoutCallback = null
     }
 
+    private fun ProjectionEmergencyControlsState.hasTimeout(): Boolean =
+        visible && timeoutBehavior != ProjectionEmergencyControlsTimeoutBehavior.NONE
+
     private fun clearEmergencyControls() {
         if (!::emergencyExitButton.isInitialized) return
         applyEmergencyControlEvent(ProjectionEmergencyControlEvent.PROJECTION_STOPPED)
@@ -581,6 +683,9 @@ class MainActivity : Activity() {
     private fun observeSettings() {
         activityScope.launch {
             val saved = settingsRepository.settings.first()
+            lockScreenPermissionGuideHandled =
+                settingsRepository.lockScreenPermissionGuideHandled.first()
+            lockScreenPermissionGuideStateLoaded = true
             settingsDraft = hydrateSettingsDraft(settingsDraft, saved)
             settingsHydrated = true
             if (!displayActive) applySettingsDraftToViews()
@@ -594,6 +699,7 @@ class MainActivity : Activity() {
             ) {
                 settingsStatus.setText(R.string.settings_restored_status)
             }
+            maybeShowLockScreenPermissionGuide()
         }
     }
 
@@ -711,7 +817,6 @@ class MainActivity : Activity() {
     }
 
     private fun connectFromSettings() {
-        hostLifecycleController.stop()
         val normalizedAddress = try {
             normalizeServiceAddress(serviceAddressInput.text.toString())
         } catch (error: IllegalArgumentException) {
@@ -731,6 +836,10 @@ class MainActivity : Activity() {
         }
         deviceNameInput.error = null
 
+        // Switching to a remote host is an explicit mode change, so release only the
+        // embedded HTTP/SSE/UDP host after the remote settings have passed validation.
+        stopEmbeddedHostService()
+        renderEmbeddedHostUi()
         val savedSettings = normalizeSettings(
             serviceAddress = normalizedAddress,
             deviceName = normalizedName
@@ -759,9 +868,58 @@ class MainActivity : Activity() {
     }
 
     private fun setEmbeddedModeButtonsEnabled(enabled: Boolean) {
+        embeddedHostControlsEnabled = enabled
         localProjectionButton.isEnabled = enabled
         hostModeButton.isEnabled = enabled
         hostNameInput.isEnabled = enabled
+        renderEmbeddedHostUi()
+    }
+
+    private fun renderEmbeddedHostUi() {
+        if (!::embeddedHostStatusText.isInitialized || !::hostLifecycleController.isInitialized) return
+        val status = embeddedHostStatus(hostLifecycleController.currentSession())
+        val session = status.session
+        if (status.isRunning && session != null) {
+            embeddedHostStatusText.text = getString(
+                R.string.embedded_host_running_status,
+                embeddedHostDisplayAddress(session)
+            )
+            stopEmbeddedHostButton.setText(R.string.stop_embedded_host)
+            stopEmbeddedHostButton.isEnabled =
+                embeddedHostControlsEnabled && shouldEnableStopEmbeddedHost(status)
+        } else {
+            embeddedHostStatusText.setText(R.string.embedded_host_stopped_status)
+            stopEmbeddedHostButton.setText(R.string.embedded_host_stop_disabled)
+            stopEmbeddedHostButton.isEnabled = false
+        }
+    }
+
+    private fun embeddedHostDisplayAddress(session: EmbeddedHostSession): String =
+        if (session.mode == EmbeddedHostMode.LAN_HOST && session.lanAddress.isNotBlank()) {
+            "http://${session.lanAddress}:${session.port}"
+        } else {
+            session.origin
+        }
+
+    private fun stopEmbeddedHostFromSettings() {
+        if (settingsScreen.visibility != View.VISIBLE) return
+        if (!hostLifecycleController.isRunning()) {
+            renderEmbeddedHostUi()
+            return
+        }
+        stopEmbeddedHostButton.isEnabled = false
+        embeddedHostStatusText.setText(R.string.stopping_embedded_host)
+        stopEmbeddedHostService()
+        embeddedHostControlsEnabled = true
+        renderEmbeddedHostUi()
+        settingsStatusOverride = null
+        settingsStatus.setText(R.string.host_stopped)
+        settingsStatus.setTextColor(getColor(R.color.markerdeck_muted))
+        updateDiscoveryLifecycle()
+    }
+
+    private fun stopEmbeddedHostService() {
+        MarkerDeckHostService.stop(applicationContext)
     }
 
     private fun showDisplayScreen(settings: MarkerDeckSettings): Boolean {
@@ -819,27 +977,53 @@ class MainActivity : Activity() {
         settingsStatus.setTextColor(getColor(R.color.markerdeck_muted))
         val errorHandler = CoroutineExceptionHandler { _, error ->
             runOnUiThread {
+                stopEmbeddedHostService()
                 setEmbeddedModeButtonsEnabled(true)
                 connectButton.isEnabled = true
                 serviceAddressInput.isEnabled = true
                 deviceNameInput.isEnabled = true
+                renderEmbeddedHostUi()
                 showSettingsError(error.message ?: getString(R.string.host_start_failed))
             }
         }
         activityScope.launch(Dispatchers.IO + errorHandler) {
             val hostSession = hostLifecycleController.start(mode, hostName)
+            MarkerDeckHostService.keepRunning(applicationContext, hostSession, hostName)
             runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (isFinishing || isDestroyed || !activityStarted || !activityResumed) {
+                    return@runOnUiThread
+                }
                 showEmbeddedHostScreen(hostSession)
+                requestHostNotificationPermissionIfNeeded()
             }
         }
     }
 
+    private fun requestHostNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) return
+        val preferences = getSharedPreferences(
+            HOST_NOTIFICATION_PERMISSION_PREFERENCES,
+            Context.MODE_PRIVATE
+        )
+        if (preferences.getBoolean(HOST_NOTIFICATION_PERMISSION_REQUESTED, false)) return
+        preferences.edit().putBoolean(HOST_NOTIFICATION_PERMISSION_REQUESTED, true).apply()
+        requestPermissions(
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            HOST_NOTIFICATION_PERMISSION_REQUEST
+        )
+    }
+
     private fun showEmbeddedHostScreen(hostSession: EmbeddedHostSession) {
         if (!prepareWebViewForProjection()) {
-            hostLifecycleController.stop()
+            stopEmbeddedHostService()
             setEmbeddedModeButtonsEnabled(true)
             connectButton.isEnabled = true
+            serviceAddressInput.isEnabled = true
+            deviceNameInput.isEnabled = true
+            renderEmbeddedHostUi()
             showSettingsError(getString(R.string.display_renderer_recovery_failed_settings))
             return
         }
@@ -972,6 +1156,76 @@ class MainActivity : Activity() {
         settingsStatus.setTextColor(getColor(R.color.markerdeck_error))
     }
 
+    private fun refreshLockScreenPermissionStatus() {
+        lockScreenPermissionStatus = lockScreenPermissionStatusForDevice(
+            manufacturer = Build.MANUFACTURER,
+            brand = Build.BRAND,
+            apiLevel = Build.VERSION.SDK_INT
+        )
+        renderLockScreenPermissionStatus()
+    }
+
+    private fun renderLockScreenPermissionStatus() {
+        if (!::lockScreenPermissionStatusText.isInitialized) return
+        lockScreenPermissionStatusText.setText(
+            when (lockScreenPermissionStatus) {
+                LockScreenPermissionStatus.GRANTED ->
+                    R.string.lock_screen_permission_status_granted
+                LockScreenPermissionStatus.DENIED ->
+                    R.string.lock_screen_permission_status_denied
+                LockScreenPermissionStatus.UNKNOWN ->
+                    R.string.lock_screen_permission_status_unknown
+                LockScreenPermissionStatus.UNSUPPORTED ->
+                    R.string.lock_screen_permission_status_unsupported
+            }
+        )
+        lockScreenPermissionStatusText.setTextColor(getColor(R.color.markerdeck_muted))
+    }
+
+    private fun markLockScreenPermissionGuideHandled() {
+        if (lockScreenPermissionGuideHandled) return
+        lockScreenPermissionGuideHandled = true
+        activityScope.launch {
+            runCatching { settingsRepository.markLockScreenPermissionGuideHandled() }
+        }
+    }
+
+    private fun maybeShowLockScreenPermissionGuide() {
+        if (!::settingsScreen.isInitialized || isFinishing || isDestroyed) return
+        if (!lockScreenPermissionGuideStateLoaded) return
+        if (!shouldShowLockScreenPermissionGuide(
+                settingsVisible = settingsScreen.visibility == View.VISIBLE,
+                permissionStatus = lockScreenPermissionStatus,
+                guideHandled = lockScreenPermissionGuideHandled,
+                shownInCurrentActivity = lockScreenPermissionGuideShownThisActivity
+            )
+        ) return
+
+        lockScreenPermissionGuideShownThisActivity = true
+        val messageRes = when (lockScreenPermissionStatus) {
+            LockScreenPermissionStatus.DENIED ->
+                R.string.lock_screen_permission_guide_message_denied
+            LockScreenPermissionStatus.UNKNOWN ->
+                R.string.lock_screen_permission_guide_message_unknown
+            LockScreenPermissionStatus.UNSUPPORTED ->
+                R.string.lock_screen_permission_guide_message_unsupported
+            LockScreenPermissionStatus.GRANTED -> return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.lock_screen_permission_guide_title)
+            .setMessage(messageRes)
+            .setNegativeButton(R.string.lock_screen_permission_later) { _, _ ->
+                markLockScreenPermissionGuideHandled()
+            }
+            .setPositiveButton(R.string.open_lock_screen_settings) { _, _ ->
+                markLockScreenPermissionGuideHandled()
+                openSystemPermissionSettings()
+            }
+            .setOnCancelListener { markLockScreenPermissionGuideHandled() }
+            .setCancelable(false)
+            .show()
+    }
+
     private fun openSystemPermissionSettings() {
         val appPackageName = applicationContext.packageName
         val miuiEditorAvailable = isXiaomiFamilyDevice(Build.MANUFACTURER, Build.BRAND) &&
@@ -1017,9 +1271,13 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showSettingsScreen() {
+    private fun returnToSettingsFromDisplay() {
+        showSettingsScreen(stopEmbeddedHost = activeWebMode != AndroidWebMode.HOST_CONTROL)
+    }
+
+    private fun showSettingsScreen(stopEmbeddedHost: Boolean = true) {
         clearEmergencyControls()
-        hostLifecycleController.stop()
+        if (stopEmbeddedHost) stopEmbeddedHostService()
         val shouldClearWebView = webViewHasDisplayPage
         val keyguardManager = getSystemService(KEYGUARD_SERVICE) as? KeyguardManager
         val shouldFinish = shouldFinishBeforeShowingSettings(
@@ -1060,6 +1318,7 @@ class MainActivity : Activity() {
         settingsStatusOverride = null
         settingsStatus.setText(R.string.settings_not_connected_status)
         settingsStatus.setTextColor(getColor(R.color.markerdeck_muted))
+        renderEmbeddedHostUi()
         updateDiscoveryLifecycle()
     }
 
@@ -1346,7 +1605,7 @@ class MainActivity : Activity() {
 
     private fun handleBackPressed() {
         if (activeWebMode == AndroidWebMode.HOST_CONTROL) {
-            showSettingsScreen()
+            returnToSettingsFromDisplay()
             return
         }
         when (backNavigationDecision(displayActive)) {
@@ -1417,21 +1676,12 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         activityStarted = true
+        renderEmbeddedHostUi()
         updateDiscoveryLifecycle()
     }
 
     override fun onStop() {
         activityStarted = false
-        if (activeWebMode == AndroidWebMode.LOCAL_PROJECTION ||
-            activeWebMode == AndroidWebMode.HOST_CONTROL
-        ) {
-            hostLifecycleController.stop()
-            if (!isFinishing && !isDestroyed) {
-                displayActive = false
-                showSettingsScreen()
-                showSettingsError(getString(R.string.host_stopped_foreground_only))
-            }
-        }
         updateDiscoveryLifecycle()
         super.onStop()
     }
@@ -1442,7 +1692,15 @@ class MainActivity : Activity() {
         if (displayActive) {
             restoreActiveDisplay(ProjectionDiagnosticState.SCREEN_ON_RECOVERY)
         }
+        renderEmbeddedHostUi()
         updateDiscoveryLifecycle()
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        if (!::settingsScreen.isInitialized) return
+        refreshLockScreenPermissionStatus()
+        maybeShowLockScreenPermissionGuide()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -1460,7 +1718,6 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        hostLifecycleController.stop()
         if (::discoveryScanner.isInitialized) discoveryScanner.stop()
         activityScope.cancel()
         mainHandler.removeCallbacksAndMessages(null)

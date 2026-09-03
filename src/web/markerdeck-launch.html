@@ -181,6 +181,75 @@
       opacity: 0.62;
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
+    .host-discovery {
+      display: grid;
+      gap: 10px;
+      padding: 14px 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .host-discovery-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .host-discovery-title {
+      font-size: 16px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .host-discovery-status {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .host-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      max-height: 190px;
+      overflow: auto;
+    }
+
+    .host-link {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--panel-2);
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .host-link strong,
+    .host-link span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .host-link strong {
+      font-size: 15px;
+    }
+
+    .host-link span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
     .meta {
       display: grid;
       gap: 6px;
@@ -216,12 +285,21 @@
         grid-template-columns: 1fr;
       }
 
+      .host-list {
+        grid-template-columns: 1fr;
+      }
+
       .service-actions {
         justify-content: stretch;
       }
 
       .service-button {
         width: 100%;
+      }
+
+      .host-discovery .service-button {
+        width: auto;
+        min-width: 120px;
       }
 
       .url-card {
@@ -255,6 +333,15 @@
         <div class="value" id="displayUrl">-</div>
       </div>
 
+      <section class="host-discovery" id="hostDiscoveryPanel" hidden>
+        <div class="host-discovery-header">
+          <div class="host-discovery-title">局域网宿主</div>
+          <button class="service-button" id="refreshHostsBtn" type="button">刷新</button>
+        </div>
+        <div class="host-discovery-status" id="hostDiscoveryStatus">正在扫描...</div>
+        <div class="host-list" id="hostList"></div>
+      </section>
+
       <div class="actions">
         <a class="action primary" id="enterControl" href="/markerdeck-screen.html?mode=control">进入控制端</a>
         <a class="action" id="enterDisplay" href="/markerdeck-screen.html?mode=display">进入被控端</a>
@@ -274,6 +361,10 @@
   <script>
     const qrBox = document.getElementById("qrBox");
     const qrImage = document.getElementById("qrImage");
+    const hostDiscoveryPanel = document.getElementById("hostDiscoveryPanel");
+    const hostDiscoveryStatus = document.getElementById("hostDiscoveryStatus");
+    const hostList = document.getElementById("hostList");
+    const refreshHostsBtn = document.getElementById("refreshHostsBtn");
     document.querySelectorAll("img").forEach((element) => {
       element.setAttribute("draggable", "false");
     });
@@ -302,18 +393,57 @@
       qrImage.src = `/qr.svg?text=${encodeURIComponent(baseUrl)}`;
     }
 
+    function renderHosts(hosts) {
+      hostList.replaceChildren();
+      hosts.forEach((host) => {
+        const link = document.createElement("a");
+        link.className = "host-link";
+        link.href = host.controlUrl;
+        const name = document.createElement("strong");
+        name.textContent = host.name;
+        const address = document.createElement("span");
+        address.textContent = host.serviceAddress;
+        link.append(name, address);
+        hostList.append(link);
+      });
+      hostDiscoveryStatus.textContent = hosts.length
+        ? `发现 ${hosts.length} 个其他宿主，点击即可进入控制端。`
+        : "未发现其他 MarkerDeck 宿主。";
+    }
+
+    async function loadHosts() {
+      refreshHostsBtn.disabled = true;
+      hostDiscoveryStatus.textContent = "正在扫描局域网宿主...";
+      hostList.replaceChildren();
+      try {
+        const response = await fetch("/api/hosts", { cache: "no-store" });
+        if (!response.ok) throw new Error("hosts");
+        const result = await response.json();
+        renderHosts(Array.isArray(result.hosts) ? result.hosts : []);
+      } catch (_) {
+        hostDiscoveryStatus.textContent = "扫描暂时不可用，请检查局域网或防火墙。";
+      } finally {
+        refreshHostsBtn.disabled = false;
+      }
+    }
+
     async function loadLanUrls() {
       try {
         const response = await fetch("/api/info", { cache: "no-store" });
         if (!response.ok) throw new Error("info");
         const info = await response.json();
         applyUrls(info.url);
+        if (info.capabilities?.hostDiscovery) {
+          hostDiscoveryPanel.hidden = false;
+          loadHosts();
+        }
       } catch (_) {
         applyUrls(`${location.origin}/markerdeck-launch.html`);
       }
     }
 
     loadLanUrls();
+    refreshHostsBtn.addEventListener("click", loadHosts);
 
     document.getElementById("stopServerBtn").addEventListener("click", async (event) => {
       const button = event.currentTarget;

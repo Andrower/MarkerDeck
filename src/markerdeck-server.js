@@ -7,6 +7,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const dgram = require("node:dgram");
 const { spawn } = require("node:child_process");
+const { createMarkerDeckHostScanner } = require("./markerdeck-host-discovery");
 
 const PORT = Number(process.env.PORT || 8765);
 const DISCOVERY_PROTOCOL_VERSION = 1;
@@ -16,8 +17,18 @@ const DISCOVERY_REQUEST_TYPE = "discover";
 const DISCOVERY_MULTICAST_ADDRESS = "239.255.77.77";
 // Keep discovery on a fixed LAN port so clients can find servers whose HTTP port is configured.
 const DISCOVERY_PORT = Number(process.env.MARKERDECK_DISCOVERY_PORT || 8766);
+const HOST_SCAN_PORT = Number(process.env.MARKERDECK_HOST_SCAN_PORT || DISCOVERY_PORT);
+const HOST_SCAN_TARGETS = String(process.env.MARKERDECK_HOST_SCAN_TARGETS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 const DISCOVERY_NAME = String(process.env.MARKERDECK_DISCOVERY_NAME || "MarkerDeck").trim().slice(0, 40) || "MarkerDeck";
 const DISCOVERY_INSTANCE_ID = crypto.randomBytes(12).toString("hex");
+const hostScanner = createMarkerDeckHostScanner({
+  discoveryPort: HOST_SCAN_PORT,
+  selfInstanceId: DISCOVERY_INSTANCE_ID,
+  targets: HOST_SCAN_TARGETS
+});
 const DISCOVERY_MAX_PACKET_SIZE = 4096;
 const ROOT = __dirname;
 const WEB_ROOT = path.join(ROOT, "web");
@@ -708,7 +719,8 @@ async function handler(req, res) {
         videoExport: true,
         pngExport: true,
         sse: true,
-        udpDiscovery: true
+        udpDiscovery: true,
+        hostDiscovery: true
       }
     }), "application/json; charset=utf-8");
   }
@@ -717,6 +729,11 @@ async function handler(req, res) {
     const nonce = String(url.searchParams.get("nonce") || "").trim();
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(nonce)) return send(res, 400, "Invalid discovery nonce");
     return send(res, 200, JSON.stringify(discoveryInfo(nonce)), "application/json; charset=utf-8");
+  }
+
+  if (url.pathname === "/api/hosts" && req.method === "GET") {
+    const hosts = await hostScanner.scan();
+    return send(res, 200, JSON.stringify({ hosts, scannedAt: Date.now() }), "application/json; charset=utf-8");
   }
 
   if (url.pathname === "/api/events" && req.method === "GET") {

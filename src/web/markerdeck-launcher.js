@@ -76,11 +76,6 @@
         await navigator.clipboard.writeText(dom.controlUrlText.textContent);
       } catch (_) {}
     });
-    dom.openControlUrlBtn.addEventListener("click", () => {
-      if (state.serverMode && dom.controlUrlText.textContent.startsWith("http")) {
-        global.location.href = dom.controlUrlText.textContent;
-      }
-    });
     dom.localModeBtn.addEventListener("click", () => app.projection.startRole("local"));
     dom.displayModeBtn.addEventListener("click", () => app.projection.startRole("display"));
     dom.controlModeBtn.addEventListener("click", () => app.projection.startRole("control"));

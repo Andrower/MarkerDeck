@@ -45,7 +45,9 @@ class AndroidHostServerTest {
     fun servesInfoAssetsRegistrationAndStateThroughHttp() {
         val info = request("/api/info")
         assertEquals(200, info.first)
-        assertEquals(false, JSONObject(info.second).getJSONObject("capabilities").getBoolean("videoExport"))
+        val capabilities = JSONObject(info.second).getJSONObject("capabilities")
+        assertEquals(false, capabilities.getBoolean("videoExport"))
+        assertEquals(false, capabilities.getBoolean("hostDiscovery"))
 
         val asset = request("/markerdeck-screen.html")
         assertEquals(200, asset.first)

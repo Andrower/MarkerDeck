@@ -22,3 +22,25 @@ data class EmbeddedHostSession(
     val lanAddress: String,
     val discoveryAvailable: Boolean
 )
+
+enum class EmbeddedHostServiceState {
+    STOPPED,
+    RUNNING
+}
+
+data class EmbeddedHostStatus(
+    val state: EmbeddedHostServiceState,
+    val session: EmbeddedHostSession? = null
+) {
+    val isRunning: Boolean
+        get() = state == EmbeddedHostServiceState.RUNNING
+}
+
+fun embeddedHostStatus(session: EmbeddedHostSession?): EmbeddedHostStatus =
+    if (session == null) {
+        EmbeddedHostStatus(EmbeddedHostServiceState.STOPPED)
+    } else {
+        EmbeddedHostStatus(EmbeddedHostServiceState.RUNNING, session)
+    }
+
+fun shouldEnableStopEmbeddedHost(status: EmbeddedHostStatus): Boolean = status.isRunning
