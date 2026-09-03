@@ -2,6 +2,7 @@ package com.andrower.markerdeck
 
 import org.json.JSONObject
 import java.util.Locale
+import kotlin.math.roundToInt
 
 const val MARKERDECK_HOST_DEFAULT_PORT = 8765
 const val MARKERDECK_HOST_MAX_BODY_BYTES = 64 * 1024
@@ -15,6 +16,7 @@ const val MARKERDECK_HOST_SCREEN_PAGE = "/markerdeck-screen.html"
 val DEFAULT_HOST_STATE: Map<String, String> = linkedMapOf(
     "bgColor" to "#00ff00",
     "bgBrightness" to "100",
+    "overallBrightness" to "100",
     "crossColor" to "#0040d8",
     "crossBrightness" to "100",
     "crossSize" to "6",
@@ -93,6 +95,31 @@ fun normalizeDeviceRetentionMs(value: Long): Long = when {
     else -> value.coerceIn(30_000L, 7 * 24 * 60 * 60 * 1000L)
 }
 
+private fun brightnessPercent(value: Any?, fallback: Double = 100.0): Double {
+    val fallbackValue = fallback.takeIf { it.isFinite() }?.coerceIn(0.0, 100.0) ?: 100.0
+    val numeric = value?.toString()?.trim()?.toDoubleOrNull() ?: return fallbackValue
+    return numeric.takeIf { it.isFinite() }?.coerceIn(0.0, 100.0) ?: fallbackValue
+}
+
+fun normalizeOverallBrightness(value: Any?): String {
+    return brightnessPercent(value).roundToInt().toString()
+}
+
+private fun scaleHexColor(hex: Any?, brightness: Any?): String {
+    val source = hex?.toString()?.trim().orEmpty()
+    val match = Regex("^#([0-9a-f]{6})$", RegexOption.IGNORE_CASE).matchEntire(source)
+        ?: return source
+    val level = brightnessPercent(brightness)
+    if (level == 100.0) return source
+    val color = match.groupValues[1]
+    val values = listOf(0, 2, 4).map { offset ->
+        color.substring(offset, offset + 2).toInt(16)
+    }
+    return "#" + values.joinToString("") { value ->
+        "%02x".format(Locale.ROOT, (value * level / 100.0).roundToInt())
+    }
+}
+
 fun normalizeHostState(next: Map<String, *>?): Map<String, String> {
     val normalized = LinkedHashMap(DEFAULT_HOST_STATE)
     next.orEmpty().forEach { (key, value) ->
@@ -102,6 +129,11 @@ fun normalizeHostState(next: Map<String, *>?): Map<String, String> {
             else -> value.toString()
         }
     }
+    normalized["bgColor"] = scaleHexColor(normalized["bgColor"], normalized["bgBrightness"])
+    normalized["crossColor"] = scaleHexColor(normalized["crossColor"], normalized["crossBrightness"])
+    normalized["bgBrightness"] = "100"
+    normalized["crossBrightness"] = "100"
+    normalized["overallBrightness"] = normalizeOverallBrightness(normalized["overallBrightness"])
     return normalized
 }
 
@@ -159,11 +191,11 @@ fun hostPresetFromJson(value: JSONObject, fallbackId: String): HostPreset? {
 fun defaultHostPresets(): List<HostPreset> {
     val definitions = listOf(
         listOf("绿底蓝十字", "#00ff00", "100", "#0040d8", "100"),
-        listOf("60%绿底蓝十字", "#00ff00", "60", "#0040d8", "100"),
-        listOf("30%绿底蓝十字", "#00ff00", "30", "#0040d8", "100"),
+        listOf("60%绿底蓝十字", "#009900", "100", "#0040d8", "100"),
+        listOf("30%绿底蓝十字", "#004d00", "100", "#0040d8", "100"),
         listOf("蓝底绿十字", "#0040d8", "100", "#00ff00", "100"),
-        listOf("60%蓝底绿十字", "#0040d8", "60", "#00ff00", "100"),
-        listOf("30%蓝底绿十字", "#0040d8", "30", "#00ff00", "100"),
+        listOf("60%蓝底绿十字", "#002682", "100", "#00ff00", "100"),
+        listOf("30%蓝底绿十字", "#001341", "100", "#00ff00", "100"),
         listOf("浅灰底蓝十字", "#d8d8d8", "100", "#0040d8", "100"),
         listOf("浅灰底绿十字", "#d8d8d8", "100", "#00ff00", "100")
     )
@@ -174,7 +206,7 @@ fun defaultHostPresets(): List<HostPreset> {
             put("crossColor", definition[3])
             put("crossBrightness", definition[4])
         }
-        HostPreset("default-${index + 1}", definition[0], state)
+        HostPreset("default-${index + 1}", definition[0], normalizeHostState(state))
     }
 }
 
@@ -210,6 +242,7 @@ data class HostRegistrationResult(
     val name: String = "",
     val state: Map<String, String> = DEFAULT_HOST_STATE,
     val globalLockCommandId: String = "0",
+    val globalLockCommand: String = "none",
     val deviceListChanged: Boolean = false
 )
 

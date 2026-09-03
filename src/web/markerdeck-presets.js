@@ -2,7 +2,8 @@
   "use strict";
 
   const app = global.MarkerDeck;
-  const { dom, state, STORAGE_KEYS, LEGACY_STORAGE_KEYS, colorWithBrightness, readStorageWithLegacy, readState, setState, updateStatus } = app.core;
+  const { dom, state, STORAGE_KEYS, LEGACY_STORAGE_KEYS, readStorageWithLegacy, readState, setState, updateStatus } = app.core;
+  const { canonicalizeState, colorWithOverallBrightness } = app.visualState;
 
   function saveMobilePresetPreferences() {
     localStorage.setItem(STORAGE_KEYS.recentPresets, JSON.stringify(state.recentPresetIds));
@@ -10,10 +11,14 @@
   }
 
   function setPresetSwatch(swatch, presetState = {}) {
-    swatch.style.background = colorWithBrightness(presetState.bgColor || "#00ff00", presetState.bgBrightness ?? 100);
-    swatch.style.setProperty("--cross", String(presetState.hideCross || "0") === "1"
+    const normalizedState = canonicalizeState(presetState);
+    swatch.style.background = colorWithOverallBrightness(
+      normalizedState.bgColor || "#00ff00",
+      normalizedState.overallBrightness
+    );
+    swatch.style.setProperty("--cross", String(normalizedState.hideCross || "0") === "1"
       ? "transparent"
-      : colorWithBrightness(presetState.crossColor || "#0040d8", presetState.crossBrightness ?? 100));
+      : colorWithOverallBrightness(normalizedState.crossColor || "#0040d8", normalizedState.overallBrightness));
   }
 
   function updateMobileCurrentPreset() {
@@ -28,11 +33,12 @@
   }
 
   function reconcileActivePreset(nextState) {
+    const normalizedNextState = canonicalizeState(nextState);
     const activePreset = state.presets.find((preset) => String(preset.id) === state.activePresetId);
     if (activePreset) {
       const ignoredKeys = new Set(["forceLock", "displayLocked", "lockCommand", "lockCommandId"]);
       const matches = Object.entries(activePreset.state || {}).every(([key, value]) =>
-        ignoredKeys.has(key) || String(nextState?.[key] ?? "") === String(value ?? "")
+        ignoredKeys.has(key) || String(normalizedNextState?.[key] ?? "") === String(value ?? "")
       );
       if (!matches) state.activePresetId = "";
     }
@@ -141,13 +147,14 @@
   }
 
   function applyPreset(preset) {
+    const presetState = canonicalizeState(preset.state || {});
     state.activePresetId = String(preset.id);
     state.recentPresetIds = [state.activePresetId, ...state.recentPresetIds.filter((id) => id !== state.activePresetId)].slice(0, 4);
     saveMobilePresetPreferences();
-    setState(preset.state || {});
+    setState(presetState);
     app.canvas.render();
     if (state.role === "control") {
-      state.selectedDeviceState = { ...(state.selectedDeviceState || {}), ...(preset.state || {}) };
+      state.selectedDeviceState = { ...(state.selectedDeviceState || {}), ...presetState };
     }
     app.projection.publishState();
     buildMobilePresets();
@@ -191,11 +198,11 @@
   async function loadPresets() {
     if (!state.serverMode) {
       try {
-        state.presets = JSON.parse(readStorageWithLegacy(
+        state.presets = normalizePresetList(JSON.parse(readStorageWithLegacy(
           localStorage,
           STORAGE_KEYS.presets,
           LEGACY_STORAGE_KEYS.presets
-        ) || "[]");
+        ) || "[]"));
       } catch (_) {
         state.presets = [];
       }
@@ -204,11 +211,20 @@
     }
     try {
       const result = await app.api.getPresets();
-      state.presets = result.presets || [];
+      state.presets = normalizePresetList(result.presets || []);
       buildPresets();
     } catch (_) {
       updateStatus("预设加载失败");
     }
+  }
+
+  function normalizePresetList(presets) {
+    return Array.isArray(presets)
+      ? presets.filter(Boolean).map((preset) => ({
+        ...preset,
+        state: canonicalizeState(preset.state || {})
+      }))
+      : [];
   }
 
   async function saveCurrentPreset() {
@@ -223,7 +239,7 @@
     try {
       if (state.serverMode) {
         const result = await app.api.savePreset(name, presetState);
-        state.presets = result.presets || state.presets;
+        state.presets = normalizePresetList(result.presets || state.presets);
       } else {
         state.presets.push({ id: `local-${Date.now()}`, name, state: presetState });
         localStorage.setItem(STORAGE_KEYS.presets, JSON.stringify(state.presets));
@@ -243,7 +259,7 @@
     try {
       if (state.serverMode) {
         const result = await app.api.deletePreset(preset.id);
-        state.presets = result.presets || [];
+        state.presets = normalizePresetList(result.presets || []);
       } else {
         state.presets = state.presets.filter((item) => item.id !== preset.id);
         localStorage.setItem(STORAGE_KEYS.presets, JSON.stringify(state.presets));

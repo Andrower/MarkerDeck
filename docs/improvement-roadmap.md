@@ -164,6 +164,27 @@
 - **验收标准**：小屏设置页三个入口垂直排列且不重叠；本地投放无需外部电脑即可显示绿幕并响应当前页面控制；本机宿主控制页显示 LAN 地址/二维码，同网浏览器和被控端可注册并完成一次画面状态同步与锁定 ACK；远程连接、自动发现、设备名、普通 WebView 投放、锁屏恢复和三击退出流程不回归；宿主在 Activity 离开前台、销毁及最近任务移除后仍可从同网设备访问，并能从设置页和常驻通知明确停止。
 - **依赖**：MD-A01、MD-A02、MD-A03、MD-A08；需要 Android Studio JBR/SDK、同网浏览器或另一 Android 被控端完成现场闭环验证。
 
+#### MD-A10 Android 扫描二维码连接局域网宿主
+
+状态：代码、纯 Kotlin/JVM 测试、Lint 和 debug 构建已实现；真实设备相机权限、扫码识别和不同 OEM 扫描器现场验收待完成。
+
+- **范围**：在 Android 设置页的服务地址输入附近增加清晰的“扫描二维码”入口，使用成熟的 JourneyApps ZXing Embedded `ScanContract` 和 AndroidX Activity Result API，并通过 MarkerDeck 自有 `CaptureActivity` 子类承载扫码；Manifest 将该 Activity 设置为 `sensorPortrait`、`exported=false`，`ScanOptions` 显式锁定方向，允许正反竖屏且绝不横屏。方向限制只作用于扫码 Activity，不改变投放 WebView、本地投放或宿主控制页的横竖屏行为；同时保持小屏滚动、状态栏/刘海安全区、自动发现、手动输入、内置宿主状态和普通投放布局互不重叠。
+- **地址边界**：复用现有 `normalizeServiceAddress`，接受当前 MarkerDeck 启动页的完整 `markerdeck-launch.html` URL、控制端/投放端 URL、带 query 的 HTTP(S) URL 和裸 IP/IP:端口，统一写入服务 origin；拒绝空内容、无效主机/端口及 `javascript:`, `file:`, `ftp:` 等非 HTTP(S) scheme。不改变桌面端、自动发现协议、网页二维码编码格式或现有安全锁行为。
+- **权限与失败处理**：Manifest 将相机声明为可选硬件能力；只有点击扫码按钮后才检查并申请 `CAMERA`。权限拒绝、取消、无相机、空/非法二维码和扫码器异常显示可读状态，保留此前地址输入；成功只填入地址并要求用户继续点击连接确认，不自动导航或保存配置。
+- **产物**：ZXing Embedded/Activity Result 依赖、二维码宿主地址解析和扫码状态纯逻辑模块、设置页按钮/状态 UI、权限与扫码结果回调、JVM 测试、Android README 和手工验收清单。
+- **验收标准**：小屏和带 cutout 的设置页中按钮、结果状态、自动发现、手动输入和宿主状态均不重叠；首次点击前不请求相机权限；扫码 Activity 清单为 `sensorPortrait` 且 `exported=false`，有效 URL/裸 IP 能正确归一化，非法 scheme/内容不改变原输入；取消、拒绝、无相机和扫描失败均有状态；成功后停留设置页且不进入投放；Android 单测、`lintDebug`、`assembleDebug` 和根目录 Node 检查通过或准确记录环境阻断原因。
+- **依赖**：MD-A01、MD-A02、MD-A08；需要 Android Studio JBR/SDK、可显示现有 MarkerDeck 二维码的服务端，以及至少一台有相机和一台无相机/可拒绝权限的 Android 测试环境。
+
+#### MD-A11 亮度与远程锁定延迟优化
+
+状态：代码、Node/服务端集成测试、Android JVM 测试、结构检查和 Android 构建门禁已实现；真实 Android 窗口亮度、不同 OEM 生命周期恢复和 SSE 暂断现场时序仍待设备验收。
+
+- **Android 窗口亮度**：本地或远程实际投放页面只覆盖当前 Activity 的 `WindowManager.LayoutParams.screenBrightness=1.0f`；返回设置、错误页完成退出和 Activity 清理恢复 `BRIGHTNESS_OVERRIDE_NONE`。`onResume`、屏幕点亮、窗口重新获得焦点和方向变化重新应用投放窗口状态；禁止 `Settings.System`、`WRITE_SETTINGS` 和全局亮度副作用。
+- **总体亮度状态（子项 MD-A11-01）**：页面只保留 0-100、默认 100 的“总体亮度”控制项。canonical state 将旧 `bgBrightness`/`crossBrightness` 分别折入背景/十字 RGB 色值，再把两个 legacy 字段写回字符串 `"100"`；总体亮度是唯一渲染乘数，且迁移必须幂等。Canvas、随机点、设备缩略图、PNG、视频、预设预览、控制端同步、Node 服务和 Android Host 使用相同算法；新状态仍保留 legacy 字段以兼容旧客户端。
+- **锁定回退**：SSE 健康时即时下发；SSE 暂断时，约 1.5 秒注册心跳返回的持久目标状态必须经过 `applyRemoteState`，并与 15 秒低频状态拉取共用去重/ACK 逻辑。首次注册建立当前全局命令 baseline，不重放历史全局命令；后续全局 ID 变化才执行。远程锁定先更新 locked DOM/canvas/native Electron 状态，不尝试无用户手势的 `requestFullscreen`；本地用户操作仍可请求浏览器 Fullscreen。控制端刷新状态可并行，不能改变批量目标、ACK 计数或离线回退。
+- **兼容与验证**：服务端和 Android Host 的状态白名单接纳 `overallBrightness` 并保留未知字段过滤；注册响应保留全局命令 ID/命令，锁定 SSE 事件增加可选 global 标记，旧客户端仍可忽略新增字段。补充 RGB 折色、幂等、旧预设、总体亮度组合、Node/Android canonical state、渲染计算、注册心跳持久锁回退和中文设备名保存/返回断言；设备名上限继续为 40 字符。子项记录见 `docs/tasks/MD-A11.md`。
+- **依赖**：MD-A01、MD-A02、MD-A03、MD-A09、MD-A10；需要 Android Studio JBR/SDK、至少一台可运行本地/远程投放的 Android 设备，以及可主动中断/恢复 SSE 的服务端测试环境。
+
 ### 5. 关键门禁与共同验收
 
 - MD-A02 普通投放端 MVP 完成并通过兼容性验收后，继续以普通 Activity 生命周期作为唯一恢复路径，不在文档、界面或 Release 说明中暗示系统级锁定能力。
@@ -203,7 +224,7 @@ MarkerDeck/
 - **M2 普通投放可靠性**：MD-A06 完成普通投放的设备/API 支持矩阵、20 次灭屏/亮屏、弱网和 WebView 异常记录。
 - **M3 可发布 APK**：MD-A07 生成签名 APK、校验值和 GitHub Release 产物；未验证的 Android API/OEM 不写入支持声明。
 
-建议依赖顺序为 `MD-A01 -> MD-A02 -> MD-A03 -> MD-A06 -> MD-A07`；MD-A08 作为可选发现能力并行维护，但不得绕过普通投放和兼容性门禁发布。
+建议依赖顺序为 `MD-A01 -> MD-A02 -> MD-A03 -> MD-A08 -> MD-A09 -> MD-A10 -> MD-A11 -> MD-A06 -> MD-A07`；MD-A09 作为 Android 宿主纵切并行维护，MD-A10/MD-A11 不改变普通投放和兼容性门禁。
 
 浏览器/PWA 不作为满足强前台的实现。
 

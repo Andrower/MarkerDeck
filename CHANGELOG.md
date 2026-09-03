@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added MD-A10 Android QR host scanning on the settings page with JourneyApps ZXing Embedded and Activity Result permission/scanner flows. Existing MarkerDeck launch, control, display, query, and bare IP values normalize to the service origin; invalid schemes/content, cancellation, camera denial, missing cameras, and scanner failures preserve the existing input and report status, while successful scans still require explicit user confirmation to connect.
+- Fixed MD-A10 QR scanner launches by routing `ScanContract` through a MarkerDeck-owned `CaptureActivity` declared `exported=false` with `sensorPortrait`, and locking the scanner orientation. Projection WebView, local projection, and host control page orientation behavior remain unchanged.
+- Added MD-A11 overall-brightness state convergence: the UI keeps only “总体亮度”, while legacy `bgBrightness`/`crossBrightness` values are folded into RGB colors and emitted as string `"100"` for old clients. The canonical state is shared by live output, random points, thumbnails, PNG, video, presets, Node hosting, and Android hosting; built-in 60%/30% presets keep their names with folded color values. Android projection windows still use a per-Activity 100% brightness override and restore `BRIGHTNESS_OVERRIDE_NONE` on exit/cleanup without changing global system brightness. Remote locks execute immediately through DOM/canvas/native state, use the 1.5-second registration heartbeat when SSE is temporarily unavailable, preserve the global-command baseline, and keep batch ACK accounting; remote commands do not request browser Fullscreen.
+- Fixed Android projection control-panel auto-hide during interaction: pointer, focus, keyboard (matched by key code/key), slider, color/select, text-input, preset, and button activity now pauses the existing timeout and restarts it only after interaction ends. Keyup, control blur, and window blur clear interrupted interactions, while control-surface events no longer bubble into canvas visibility handling; three-tap unlock, exit projection, remote lock, brightness, QR, and other projection behavior remain unchanged.
+
 ## 1.4.0 - 2026-09-03
 
 - Added an installable debug-signed Android APK to the cross-platform GitHub Release workflow alongside the macOS and Windows packages.

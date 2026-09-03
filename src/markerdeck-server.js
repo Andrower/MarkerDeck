@@ -8,6 +8,11 @@ const crypto = require("node:crypto");
 const dgram = require("node:dgram");
 const { spawn } = require("node:child_process");
 const { createMarkerDeckHostScanner } = require("./markerdeck-host-discovery");
+const {
+  DEFAULT_STATE,
+  canonicalizeState,
+  createDefaultPresets,
+} = require("./web/markerdeck-visual-state");
 
 const PORT = Number(process.env.PORT || 8765);
 const DISCOVERY_PROTOCOL_VERSION = 1;
@@ -51,6 +56,8 @@ const DEFAULT_DEVICE_RETENTION_MS = 10 * 60 * 1000;
 const STATIC_ASSETS = new Map([
   ["/markerdeck-screen.html", { file: "markerdeck-screen.html", type: "text/html; charset=utf-8" }],
   ["/markerdeck-launch.html", { file: "markerdeck-launch.html", type: "text/html; charset=utf-8" }],
+  ["/markerdeck-visual-state.js", { file: "markerdeck-visual-state.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-control-interaction.js", { file: "markerdeck-control-interaction.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-base.css", { file: "markerdeck-base.css", type: "text/css; charset=utf-8" }],
   ["/markerdeck-control.css", { file: "markerdeck-control.css", type: "text/css; charset=utf-8" }],
   ["/markerdeck-mobile.css", { file: "markerdeck-mobile.css", type: "text/css; charset=utf-8" }],
@@ -72,45 +79,8 @@ const LEGACY_PAGE_REDIRECTS = new Map([
 
 const LAUNCH_PAGE = "/markerdeck-launch.html";
 
-const defaultState = {
-  bgColor: "#00ff00",
-  bgBrightness: "100",
-  crossColor: "#0040d8",
-  crossBrightness: "100",
-  crossSize: "6",
-  crossThickness: "1.4",
-  edgeRatio: "10",
-  centerY: "50",
-  hideCross: "0",
-  randomPoints: "0",
-  randomPointCount: "12",
-  randomSeed: "",
-  forceLock: "0",
-  displayLocked: "0",
-  lockCommand: "none",
-  lockCommandId: "0"
-};
-
-const defaultPresets = [
-  ["绿底蓝十字", "#00ff00", "100", "#0040d8", "100"],
-  ["60%绿底蓝十字", "#00ff00", "60", "#0040d8", "100"],
-  ["30%绿底蓝十字", "#00ff00", "30", "#0040d8", "100"],
-  ["蓝底绿十字", "#0040d8", "100", "#00ff00", "100"],
-  ["60%蓝底绿十字", "#0040d8", "60", "#00ff00", "100"],
-  ["30%蓝底绿十字", "#0040d8", "30", "#00ff00", "100"],
-  ["浅灰底蓝十字", "#d8d8d8", "100", "#0040d8", "100"],
-  ["浅灰底绿十字", "#d8d8d8", "100", "#00ff00", "100"]
-].map(([name, bgColor, bgBrightness, crossColor, crossBrightness], index) => ({
-  id: `default-${index + 1}`,
-  name,
-  state: {
-    ...defaultState,
-    bgColor,
-    bgBrightness,
-    crossColor,
-    crossBrightness
-  }
-}));
+const defaultState = { ...DEFAULT_STATE };
+const defaultPresets = createDefaultPresets();
 
 let state = { ...defaultState };
 const devices = new Map();
@@ -280,6 +250,7 @@ function createLockCommand(ids, enabled, options = {}) {
   const command = {
     id: commandId,
     enabled: !!enabled,
+    global: options.global === true,
     targetIds,
     acknowledgements: new Map(),
     createdAt: Date.now()
@@ -296,7 +267,7 @@ function createLockCommand(ids, enabled, options = {}) {
       });
     });
   }
-  pushEvent("lock-command", { commandId, enabled: !!enabled }, {
+  pushEvent("lock-command", { commandId, enabled: !!enabled, global: command.global }, {
     role: "display",
     sessionIds: targetIds
   });
@@ -311,10 +282,11 @@ function createLockCommand(ids, enabled, options = {}) {
 }
 
 function normalizeState(next) {
-  return {
+  const normalized = {
     ...defaultState,
     ...Object.fromEntries(Object.entries(next || {}).filter(([key]) => key in defaultState))
   };
+  return canonicalizeState(normalized);
 }
 
 function getLanIp() {
@@ -875,6 +847,7 @@ async function handler(req, res) {
       sessionId,
       name: registeredName,
       state: nextState,
+      globalLockCommand: lockBroadcast.command,
       globalLockCommandId: lockBroadcast.commandId
     }), "application/json; charset=utf-8");
   }
@@ -935,7 +908,7 @@ async function handler(req, res) {
     const targetIds = Array.from(devices.values())
       .filter((device) => Date.now() - device.lastSeen < DEVICE_OFFLINE_MS && device.role === "display")
       .map((device) => device.id);
-    const command = createLockCommand(targetIds, enabled, { persistToDevice: false });
+    const command = createLockCommand(targetIds, enabled, { persistToDevice: false, global: true });
     lockBroadcast = {
       command: enabled ? "lock" : "unlock",
       commandId: command.id

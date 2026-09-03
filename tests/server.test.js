@@ -20,7 +20,12 @@ const legacySettingsFile = path.join(dataDirectory, "chroma-settings.json");
 fs.writeFileSync(legacyPresetsFile, JSON.stringify([{
   id: "legacy-preset",
   name: "迁移兼容预设",
-  state: { bgColor: "#135790", crossColor: "#2468ac" }
+  state: {
+    bgColor: "#135790",
+    bgBrightness: "60",
+    crossColor: "#2468ac",
+    crossBrightness: "30"
+  }
 }], null, 2), "utf8");
 fs.writeFileSync(legacySettingsFile, JSON.stringify({ deviceRetentionMs: 60 * 1000 }, null, 2), "utf8");
 let serverProcess;
@@ -222,6 +227,8 @@ test("serves modular screen assets with exact content types and rejects unknown 
     ["/markerdeck-base.css", "text/css"],
     ["/markerdeck-control.css", "text/css"],
     ["/markerdeck-mobile.css", "text/css"],
+    ["/markerdeck-visual-state.js", "text/javascript"],
+    ["/markerdeck-control-interaction.js", "text/javascript"],
     ["/markerdeck-core.js", "text/javascript"],
     ["/markerdeck-api.js", "text/javascript"],
     ["/markerdeck-canvas.js", "text/javascript"],
@@ -335,7 +342,11 @@ test("loads legacy presets and settings during the MarkerDeck migration", async 
   const migratedPreset = presets.body.presets.find((preset) => preset.id === "legacy-preset");
   assert.ok(migratedPreset);
   assert.equal(migratedPreset.name, "迁移兼容预设");
-  assert.equal(migratedPreset.state.bgColor, "#135790");
+  assert.equal(migratedPreset.state.bgColor, "#0b3456");
+  assert.equal(migratedPreset.state.crossColor, "#0b1f34");
+  assert.equal(migratedPreset.state.bgBrightness, "100");
+  assert.equal(migratedPreset.state.crossBrightness, "100");
+  assert.equal(migratedPreset.state.overallBrightness, "100");
 
   const settings = await jsonRequest("/api/device-settings");
   assert.equal(settings.body.deviceRetentionMs, 60 * 1000);
@@ -361,6 +372,8 @@ test("updates state and registers a named device", async () => {
   const state = await jsonRequest("/api/state");
   assert.equal(state.body.bgColor, "#123456");
   assert.equal(state.body.hideCross, "1");
+  assert.equal(state.body.bgBrightness, "100");
+  assert.equal(state.body.crossBrightness, "100");
 
   const registration = await jsonRequest("/api/register", {
     method: "POST",
@@ -375,11 +388,117 @@ test("updates state and registers a named device", async () => {
   });
   assert.equal(registration.response.status, 200);
   assert.equal(registration.body.name, "测试屏幕");
+  assert.equal(registration.body.globalLockCommand, "none");
   assert.equal(registration.body.globalLockCommandId, "0");
 
   const devices = await jsonRequest("/api/devices");
   assert.equal(devices.body.devices[0].id, "test-session");
   assert.equal(devices.body.devices[0].deviceId, "test-device");
+});
+
+test("preserves Chinese device names through registration and device listing", async () => {
+  const registration = await jsonRequest("/api/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: "chinese-name-session",
+      sessionId: "chinese-name-session",
+      deviceId: "chinese-name-device",
+      name: "中文投放屏",
+      role: "display",
+      updateName: true
+    })
+  });
+  assert.equal(registration.response.status, 200);
+  assert.equal(registration.body.name, "中文投放屏");
+
+  const devices = await jsonRequest("/api/devices");
+  assert.equal(
+    devices.body.devices.find((device) => device.id === "chinese-name-session").name,
+    "中文投放屏"
+  );
+});
+
+test("normalizes overall brightness while filtering unknown state fields", async () => {
+  const update = await jsonRequest("/api/state", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bgColor: "#00ff00",
+      bgBrightness: "60",
+      crossColor: "#ffffff",
+      crossBrightness: "30",
+      overallBrightness: "50.4",
+      unknownField: "ignored"
+    })
+  });
+  assert.equal(update.response.status, 200);
+
+  const state = await jsonRequest("/api/state");
+  assert.equal(state.body.bgColor, "#009900");
+  assert.equal(state.body.crossColor, "#4d4d4d");
+  assert.equal(state.body.bgBrightness, "100");
+  assert.equal(state.body.crossBrightness, "100");
+  assert.equal(state.body.overallBrightness, "50");
+  assert.equal(Object.hasOwn(state.body, "unknownField"), false);
+
+  await jsonRequest("/api/state", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bgColor: state.body.bgColor,
+      bgBrightness: state.body.bgBrightness,
+      crossColor: state.body.crossColor,
+      crossBrightness: state.body.crossBrightness,
+      overallBrightness: state.body.overallBrightness
+    })
+  });
+  const canonicalAgain = await jsonRequest("/api/state");
+  assert.equal(canonicalAgain.body.bgColor, state.body.bgColor);
+  assert.equal(canonicalAgain.body.crossColor, state.body.crossColor);
+  assert.equal(canonicalAgain.body.overallBrightness, state.body.overallBrightness);
+
+  await jsonRequest("/api/state", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ overallBrightness: 150 })
+  });
+  const clamped = await jsonRequest("/api/state");
+  assert.equal(clamped.body.overallBrightness, "100");
+});
+
+test("returns persisted lock commands from registration heartbeats", async () => {
+  const sessionId = "heartbeat-lock-session";
+  await jsonRequest("/api/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: sessionId,
+      sessionId,
+      deviceId: "heartbeat-lock-device",
+      name: "心跳锁定屏",
+      role: "display",
+      updateName: true
+    })
+  });
+  const command = await jsonRequest("/api/lock-command", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: [sessionId], enabled: true })
+  });
+  const heartbeat = await jsonRequest("/api/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: sessionId,
+      sessionId,
+      deviceId: "heartbeat-lock-device",
+      name: "心跳锁定屏",
+      role: "display"
+    })
+  });
+  assert.equal(heartbeat.body.state.lockCommand, "lock");
+  assert.equal(heartbeat.body.state.lockCommandId, command.body.commandId);
 });
 
 test("tracks multiple receiving sessions for one physical device", async () => {

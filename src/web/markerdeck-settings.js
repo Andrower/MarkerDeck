@@ -45,7 +45,6 @@
 
   function blackout() {
     dom.controls.bgColor.value = "#000000";
-    dom.controls.bgBrightness.value = 100;
     dom.controls.crossColor.value = "#000000";
     publishVisualChange();
   }

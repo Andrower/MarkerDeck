@@ -13,7 +13,9 @@ const screenStylesheets = [
   "src/web/markerdeck-mobile.css"
 ];
 const screenScripts = [
+  "src/web/markerdeck-visual-state.js",
   "src/web/markerdeck-core.js",
+  "src/web/markerdeck-control-interaction.js",
   "src/web/markerdeck-api.js",
   "src/web/markerdeck-canvas.js",
   "src/web/markerdeck-export.js",
@@ -32,6 +34,8 @@ const requiredFiles = [
   "src/markerdeck-host-discovery.js",
   "src/web/markerdeck-screen.html",
   "src/web/markerdeck-launch.html",
+  "docs/tasks/README.md",
+  "docs/tasks/MD-A11.md",
   ...screenAssets,
   "desktop/electron/main.js",
   "desktop/electron/preload.js",
@@ -52,10 +56,12 @@ const androidRequiredFiles = [
   "android/app/build.gradle.kts",
   "android/app/src/main/AndroidManifest.xml",
   "android/app/src/main/kotlin/com/andrower/markerdeck/MainActivity.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/MarkerDeckCaptureActivity.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/ProjectionEmergencyControls.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/DiscoveryProtocol.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/DiscoveryScanner.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/LifecycleRecovery.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/ProjectionBrightness.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/PermissionSettings.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/ServiceUrl.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/Settings.kt",
@@ -71,6 +77,7 @@ const androidRequiredFiles = [
   "android/app/src/main/kotlin/com/andrower/markerdeck/HostSseHub.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/HostStateStore.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/HostUdpResponder.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/QrHostScan.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/QrSvg.kt",
   "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
   "android/app/src/main/res/drawable/ic_launcher_monochrome.xml",
@@ -94,6 +101,7 @@ const androidRequiredFiles = [
   "android/app/src/test/kotlin/com/andrower/markerdeck/HostProtocolTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/HostStateStoreTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/AndroidHostServerTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/QrHostScanTest.kt",
   "android/README.md",
   ".github/workflows/android-check.yml"
 ];
@@ -107,6 +115,19 @@ assert.match(androidBuild, /assets\.srcDir\(rootProject\.file\("\.\.\/src\/web"\
   "Android assets must use the shared src/web sourceSet");
 assert.match(androidBuild, /org\.nanohttpd:nanohttpd:/, "Android host must use NanoHTTPD");
 assert.match(androidBuild, /com\.google\.zxing:core:/, "Android host must use ZXing core");
+assert.match(androidBuild, /com\.journeyapps:zxing-android-embedded:/,
+  "Android QR scanner must use JourneyApps ZXing Embedded");
+
+const androidMainActivity = fs.readFileSync(
+  path.join(root, "android/app/src/main/kotlin/com/andrower/markerdeck/MainActivity.kt"),
+  "utf8"
+);
+assert.match(androidMainActivity, /setCaptureActivity\(MarkerDeckCaptureActivity::class\.java\)/,
+  "Android QR scanner must use the MarkerDeck capture activity");
+assert.match(androidMainActivity, /setOrientationLocked\(true\)/,
+  "Android QR scanner must lock its orientation");
+assert.doesNotMatch(androidMainActivity, /setOrientationLocked\(false\)/,
+  "Android QR scanner must not follow the sensor without a portrait constraint");
 
 const androidManifest = fs.readFileSync(
   path.join(root, "android/app/src/main/AndroidManifest.xml"),
@@ -120,6 +141,11 @@ assert.match(androidManifest, /android\.permission\.POST_NOTIFICATIONS"/,
   "Android host notification stop action must declare notification permission");
 assert.match(androidManifest, /android:name="\.MarkerDeckHostService"[\s\S]*?android:foregroundServiceType="connectedDevice"/,
   "Android host service must use the connectedDevice foreground-service type");
+assert.match(
+  androidManifest,
+  /<activity\b(?=[^>]*android:name="\.MarkerDeckCaptureActivity")(?=[^>]*android:exported="false")(?=[^>]*android:screenOrientation="sensorPortrait")[^>]*>/,
+  "Android QR capture activity must be non-exported and sensorPortrait"
+);
 
 const javascriptFiles = [
   "src/markerdeck-server.js",
@@ -190,6 +216,11 @@ htmlFiles.forEach((relativePath) => {
 });
 
 const displayPage = fs.readFileSync(path.join(root, "src/web/markerdeck-screen.html"), "utf8");
+const visualStateModule = fs.readFileSync(path.join(root, "src/web/markerdeck-visual-state.js"), "utf8");
+const screenSource = screenScripts
+  .filter((relativePath) => relativePath.endsWith(".js"))
+  .map((relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8"))
+  .join("\n");
 const projectionModule = fs.readFileSync(path.join(root, "src/web/markerdeck-projection.js"), "utf8");
 const linkedStylesheets = [...displayPage.matchAll(/<link\b[^>]*>/gi)]
   .map((match) => match[0])
@@ -200,10 +231,27 @@ assert.deepEqual(
   screenStylesheets.map((relativePath) => path.basename(relativePath)),
   "Screen stylesheets must retain their explicit cascade order"
 );
+const loadedScreenScripts = [...displayPage.matchAll(/<script\b[^>]*>/gi)]
+  .map((match) => getAttribute(match[0], "src"))
+  .filter(Boolean)
+  .map((reference) => path.basename(reference.split(/[?#]/, 1)[0]));
+assert.deepEqual(
+  loadedScreenScripts,
+  screenScripts.map((relativePath) => path.basename(relativePath)),
+  "Screen scripts must load in their dependency order"
+);
 assert.match(displayPage, /markerdeck-projection\.js/);
 assert.match(projectionModule, /androidProvidedDeviceName/);
 assert.match(projectionModule, /saveLocalDeviceName\(providedDeviceName\)/);
 assert.match(projectionModule, /await app\.core\.requestDisplayName\(\)/);
+assert.match(displayPage, /<span>总体亮度<\/span>/, "Screen must expose the overall brightness label");
+assert.doesNotMatch(displayPage, /\bid=["'](?:bgBrightness|crossBrightness)(?:Value)?["']/,
+  "Screen must not retain removed per-channel brightness controls");
+assert.doesNotMatch(screenSource, /(?:controls|outputs)\.(?:bgBrightness|crossBrightness)(?:Value)?\b/,
+  "Screen modules must not access removed per-channel brightness DOM properties");
+assert.match(visualStateModule, /function canonicalizeState\(/);
+assert.match(visualStateModule, /normalized\.bgBrightness\s*=\s*String\(DEFAULT_LEGACY_BRIGHTNESS\)/);
+assert.match(visualStateModule, /normalized\.crossBrightness\s*=\s*String\(DEFAULT_LEGACY_BRIGHTNESS\)/);
 
 const launcherMode = fs.statSync(path.join(root, "platform/macos/start-markerdeck-server.command")).mode;
 assert.ok((launcherMode & 0o111) !== 0, "macOS launcher must be executable");

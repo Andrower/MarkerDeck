@@ -170,19 +170,14 @@
         <span></span>
       </label>
       <label class="row">
-        <span>背景明度</span>
-        <input id="bgBrightness" type="range" min="0" max="100" value="100">
-        <span id="bgBrightnessValue"></span>
+        <span>总体亮度</span>
+        <input id="overallBrightness" type="range" min="0" max="100" value="100">
+        <span id="overallBrightnessValue"></span>
       </label>
       <label class="row">
         <span>十字颜色</span>
         <input id="crossColor" type="color" value="#0040d8">
         <span></span>
-      </label>
-      <label class="row">
-        <span>十字明度</span>
-        <input id="crossBrightness" type="range" min="0" max="100" value="100">
-        <span id="crossBrightnessValue"></span>
       </label>
       <label class="row">
         <span>十字大小</span>
@@ -289,7 +284,9 @@
     </div>
   </div>
 
+  <script src="markerdeck-visual-state.js"></script>
   <script src="markerdeck-core.js"></script>
+  <script src="markerdeck-control-interaction.js"></script>
   <script src="markerdeck-api.js"></script>
   <script src="markerdeck-canvas.js"></script>
   <script src="markerdeck-export.js"></script>

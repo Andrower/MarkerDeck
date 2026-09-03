@@ -1,6 +1,6 @@
 # MarkerDeck Android
 
-这是 MD-A09 Android Host MVP 与 MD-A03 普通投放恢复、MD-A08 局域网宿主发现和 Android 投放紧急退出实现。它是一个单 Activity 原生薄壳：设置/模式页提供本地投放、连接局域网宿主、本机作为宿主三个入口。内置宿主使用 `connectedDevice` 前台服务保持后台网络连接；实现不包含设备管理、专用设备/Kiosk、Wake Lock 权限、精确闹钟、后台启动 Activity、辅助功能服务、overlay、root、隐藏 API 或绕过认证的机制。
+这是 MD-A09 Android Host MVP、MD-A10 Android 扫描二维码连接宿主、MD-A11 亮度与远程锁定延迟优化，以及 MD-A03 普通投放恢复、MD-A08 局域网宿主发现和 Android 投放紧急退出实现。它是一个单 Activity 原生薄壳：设置/模式页提供本地投放、连接局域网宿主、本机作为宿主三个入口。内置宿主使用 `connectedDevice` 前台服务保持后台网络连接；实现不包含设备管理、专用设备/Kiosk、Wake Lock 权限、精确闹钟、后台启动 Activity、辅助功能服务、overlay、root、隐藏 API 或绕过认证的机制。
 
 ## 网页静态资源复用边界
 
@@ -11,15 +11,23 @@ APK 的内置宿主通过 Gradle `assets` sourceSet 直接引用仓库 `src/web`
 - **本地投放**：启动只绑定 `127.0.0.1` 的内置 NanoHTTPD，加载 `http://127.0.0.1:<port>/markerdeck-screen.html?mode=local`，无需外部电脑即可显示和使用现有页面控制。
 - **本机作为宿主**：启动绑定 LAN 的内置前台服务并加载 localhost 控制页。控制页从 `/api/info` 获取本机 LAN 地址和 `/qr.svg`，同网浏览器/Android 被控端复用现有注册、状态、SSE、预设和锁命令协议。
 - **连接局域网宿主**：继续使用原地址、自动发现、设备名、普通 `display` WebView、屏幕恢复和三击临时退出入口流程。
+- **扫描二维码连接宿主**：服务地址旁提供“扫描二维码”按钮，使用 JourneyApps ZXing Embedded 的 `ScanContract` 和 MarkerDeck 自有 `MarkerDeckCaptureActivity`；只有用户点击按钮后才检查并请求相机权限。扫描 Activity 在 Manifest 中使用 `sensorPortrait` 并由 `ScanOptions` 锁定方向，允许正反竖屏但不会跟随传感器进入横屏；该限制只作用于扫码，不改变投放 WebView、本地投放或宿主控制页的横竖屏行为。成功读取的启动页、控制端、投放端 URL 或裸 IP/IP:端口会归一化为 HTTP(S) 服务 origin 填入地址框，取消、拒绝、无相机、不可识别内容和扫描器异常均显示状态且保留原输入。扫描不会自动连接，仍需用户点击“连接并开始投放”。
 - **能力边界**：Android `/api/info` 宣布 `videoExport: false`，网页隐藏视频导出；没有 FFmpeg/MP4 导出。桌面 Node 服务保持视频能力。
 - **生命周期与停止**：宿主启动后由 `MarkerDeckHostService` 以前台服务方式保持，返回桌面、锁屏、切换应用、Activity `onStop`/`onDestroy` 或从最近任务移除均不会主动停止。设置首页显示运行状态/地址并提供“停止内置宿主服务”，常驻通知也提供“停止服务”；Android 13 以上首次成功启动宿主后会请求一次通知权限，拒绝不会阻止服务运行，但通知栏入口可能不可见。显式停止、切换到远程宿主、普通本地投放退出和 `/api/shutdown` 会清理 HTTP、SSE、UDP responder、多播锁及通知。系统强制停止应用、设备关机或 OEM 强制终止进程仍会停止服务；系统允许 `START_STICKY` 恢复时会按已保存的宿主模式重新启动。
 
 内置服务 API 见 `AndroidHostServer.kt`，包括静态资源、`/api/info`、`/api/discovery`、`/qr.svg`、`/api/register`、`/api/devices`、`/api/state`、`/api/events`、预设、设备设置/清理、设备名称/分组、锁定/ACK 和 `/api/shutdown`。HTTP 状态为进程内，预设与宿主设置使用 SharedPreferences 持久化。
 
+## MD-A11 亮度、总体亮度与远程锁定边界
+
+- **Android 窗口亮度**：进入本地或远程实际投放页面时，只将当前 Activity 的 `WindowManager.LayoutParams.screenBrightness` 覆盖为 `1.0f`。返回设置、投放错误完成退出或 Activity 清理时恢复 `WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE`；`onResume`、屏幕点亮和窗口重新获得焦点会重新应用 100%。不写 `Settings.System`，不申请 `WRITE_SETTINGS`，不改变系统全局亮度。
+- **总体亮度**：网页只保留 0-100 的“总体亮度”，默认 100%。读取旧状态或预设时，`bgBrightness`/`crossBrightness` 会分别折入 `bgColor`/`crossColor` 的 RGB，随后两个 legacy 字段均为字符串 `"100"`；总体亮度是唯一渲染乘数，且 canonicalization 可重复执行。随机点/十字、设备缩略图、PNG 和视频使用同一计算；新状态继续携带 legacy 字段以兼容旧客户端。这不是浏览器硬件亮度 API。
+- **远程锁定延迟**：SSE 正常时继续即时下发。SSE 暂断时，约每 1.5 秒的 `registerDevice` 心跳返回状态也会经过同一 `applyRemoteState`，因此持久化的目标锁定命令不必等待 15 秒轮询；首次收到的全局命令只建立当前 baseline，避免历史命令误执行。远程锁定先切换 locked DOM、canvas 和 Electron 状态，不调用缺少用户手势的浏览器 `requestFullscreen`；只有本地用户操作可以请求浏览器 Fullscreen。批量目标、ACK 计数和离线未响应状态仍由服务端命令状态维护。
+
 ## 固定版本
 
 - Android Gradle Plugin：`9.0.1`
 - Gradle Wrapper：`9.1.0`，使用 `gradle-9.1.0-bin.zip`
+- Android QR 扫码：JourneyApps ZXing Embedded `4.3.0`，Activity Result API `androidx.activity:activity:1.10.1`
 - JDK：`17` 或更高版本；本机验证使用 Android Studio JBR `21`
 - `minSdk`：`26`
 - `compileSdk`：API `36.1`（major `36`、minor `1`），通过 `compileSdk = 36` 与 `compileSdkMinor = 1` 选择平台
@@ -69,7 +77,7 @@ Debug APK 输出到：
 android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-纯 Kotlin 单元测试验证服务地址解析、IPv6、投放 URL 编码、发现响应校验和发现状态归并，不启动 Android 网络请求或 WebView。根目录的 `npm run check` 同时执行项目结构、JavaScript/HTML 语法和服务端 HTTP/UDP 集成检查。
+纯 Kotlin 单元测试验证服务地址解析、IPv6、投放 URL 编码、二维码宿主地址归一化、权限/取消状态、发现响应校验和发现状态归并，不启动 Android 网络请求、扫码相机或 WebView。根目录的 `npm run check` 同时执行项目结构、JavaScript/HTML 语法和服务端 HTTP/UDP 集成检查。
 
 仓库检查命令：
 
@@ -84,6 +92,8 @@ git diff --check
 - 首次打开只显示设置页；在 Activity 位于前台且有 Wi-Fi/有线局域网时，设置页会执行有界的 MarkerDeck 宿主发现，但不会自动进入投放 WebView。
 - 用户填写服务地址和设备名并点击“连接并开始投放”后，地址才会验证、写入 DataStore，并加载 `/markerdeck-screen.html?mode=display`。
 - 地址接受完整的 `http://`/`https://` 地址，也接受 `192.168.1.2`、`192.168.1.2:8765`、`localhost:8765` 等无 scheme 输入；无 scheme 时自动补 `http://`，必须有主机名或 IP，端口必须为 `1..65535`。路径、查询和片段会被丢弃并归一化为 origin。IPv6 使用方括号保持正确 URL 结构。
+- 扫描二维码只接受同一地址规则能归一化的 HTTP(S) 主机内容：`markerdeck-launch.html`、`markerdeck-screen.html?mode=control`、`markerdeck-screen.html?mode=display`、`/control`、`/display` 等完整 URL，以及裸 IP/IP:端口。`javascript:`, `file:`, `ftp:`、空内容、无主机和非法端口会被拒绝；路径、查询和片段不会写入服务地址字段。自有扫描 Activity 使用 `sensorPortrait` 且 `exported=false`，方向配置不会外溢到普通投放或宿主控制 Activity。
+- 扫描成功只填入服务地址并显示“请点击连接确认”，不会写入 DataStore、启动 WebView、进入投放页或改变设备名称；相机权限请求只由“扫描二维码”按钮触发。取消、权限拒绝、无相机和扫描失败不会覆盖手动输入。
 - 设备名会限制为 40 个字符并作为编码后的 `androidDeviceName` 查询参数传给页面。页面将它写入既有 `localStorage`，因此 Android 不弹出网页设备名对话框；普通浏览器未提供该参数时仍保留原有对话框。
 - 配置重启后恢复，但应用不会自动进入投放；必须再次点击连接。应用始终使用普通投放。升级前遗留的 `mode` 配置会被忽略，不影响地址和设备名读取，并在下一次保存配置时删除。
 - WebView 仅开启 JavaScript 和 DOM Storage，关闭文件/内容访问；原生 JavaScript bridge 仅用于投放紧急控件的显示/隐藏通知。HTTP 局域网连接由 Manifest 的 `INTERNET` 权限和 cleartext 配置支持。
@@ -105,6 +115,7 @@ git diff --check
 
 - 活动投放期间，API 27 及以上使用 `Activity.setShowWhenLocked(true)` 和 `Activity.setTurnScreenOn(true)`；API 26 只使用 `FLAG_SHOW_WHEN_LOCKED` 与 `FLAG_TURN_SCREEN_ON` 兼容标志。没有使用 dismiss keyguard、`requestDismissKeyguard` 或其他认证绕过行为。
 - 活动投放期间保留沉浸式全屏和原生 `KEEP_SCREEN_ON`。`onResume`、窗口重新获得焦点、`ACTION_SCREEN_ON` 和 `ACTION_USER_PRESENT` 会恢复窗口状态、WebView 生命周期/计时器和可见的投放层。
+- MD-A11 还会在相同的投放窗口生命周期中恢复 100% 的窗口亮度；该覆盖仅属于当前 Activity，设置页和清理路径恢复 `BRIGHTNESS_OVERRIDE_NONE`，不触及系统全局亮度。
 - 屏幕打开或恢复时，健康且已加载的页面不会重新加载，避免改变网页 `sessionId` 或打断 SSE。只有没有健康页面，或记录到主框架失败且当前没有加载请求时，才会重新加载当前选定服务 origin 的活动投放 URL。
 - WebView 渲染进程退出时，旧 WebView 会从层级中移除并销毁，随后创建同配置的新 WebView，只加载活动投放 URL；恢复期间显示可见状态，失败时显示错误和“重试”。不使用 JavaScript bridge。
 - Activity 重建只恢复 `savedInstanceState` 中明确标记为活动的、已归一化的服务地址和设备名。全新冷启动、用户返回设置页或无效快照都不会自动连接；DataStore 配置恢复仍需要用户再次点击连接。旧版本保存的模式字段会被忽略，恢复后仍是普通投放。
@@ -131,8 +142,9 @@ P0 目标是系统向 Activity 交付 resume/screen-on 回调后，目标在 `<=
 
 - 首次启动没有连接投放提示或网页设备名对话框；设置页字段可见且不重叠。若设备有局域网，发现状态和刷新按钮可见。
 - 输入空值、`ftp://`、无主机、端口 `0`、端口 `65536`，确认错误可见且不会进入 WebView；输入裸 IP、`IP:端口` 和 `localhost:端口`，确认自动补 `http://`。
+- 在服务地址旁点击“扫描二维码”，确认首次点击才请求相机权限；用启动页、控制端、投放端 URL、带 query 的 URL 和裸 IP/IP:端口测试归一化结果，用 `javascript:`, `file:`, `ftp:`、空内容测试拒绝；取消扫码、拒绝权限、无相机或相机异常时确认状态可读且原地址未改变。扫描成功后确认仍停留设置页，必须手动点击“连接并开始投放”。
 - 在同一局域网启动服务端，确认一个宿主会自动填入空地址；启动多个服务端，确认列表可选择且不会覆盖已有/正在编辑的地址；切换网络或离开设置页后确认扫描停止，返回后可刷新。
-- 输入可访问的 `http://` MarkerDeck 服务、设备名，点击连接，确认页面进入全屏、保持常亮、服务端设备列表显示该名称。
+- 输入可访问的 `http://` MarkerDeck 服务、设备名，点击连接，确认页面进入全屏、保持常亮、窗口亮度为 100%，服务端设备列表显示该名称；调整总体亮度后确认画面、缩略图和导出一致。
 - 分别启动本地投放和本机作为宿主，确认设置首页的内置宿主状态显示“运行中”和地址；点击“停止内置宿主服务”后停留在设置页并显示“已停止”，远程宿主地址和发现列表不被清除。
 - 在本机作为宿主时返回设置、回到桌面、锁屏和切换应用，使用同网设备确认服务地址仍可访问；重新打开应用后确认宿主仍显示运行中。分别从设置页和常驻通知点击停止，确认 HTTP、SSE、UDP responder、多播锁及通知均被清理。
 - 确认含空格、符号或非 ASCII 字符的设备名能正常显示，并且页面没有弹出设备名对话框。
@@ -140,6 +152,7 @@ P0 目标是系统向 Activity 交付 resume/screen-on 回调后，目标在 `<=
 - 在设置页点击“打开系统权限设置”，确认小米/HyperOS 优先进入 MarkerDeck 的 MIUI 权限编辑页；若不可用则进入应用详情页，并手动检查“允许锁屏显示”（或“锁屏显示”）。如有“后台弹出界面”或“后台启动”，按设备策略决定是否开启。
 - 在首次进入设置时确认锁屏显示引导只出现一次；选择“稍后”后同一 Activity 不再重复，重新启动应用后按持久化处理状态不再强制弹出；打开系统设置返回后确认设置页状态文字已刷新。
 - 在显示页按系统返回键，确认仍停留在投放页且页面、设置页和 Activity 均未返回；通过状态面板的显式“返回设置”按钮离开后，确认系统栏恢复、屏幕不再被原生常亮标志保持。
+- 远程锁定时确认页面先进入 locked 状态，不等待浏览器 Fullscreen；短暂断开 SSE 后确认约 1.5 秒注册心跳可以执行持久锁定命令，首次连接不会重放历史全局命令，控制端 ACK/批量未响应计数仍准确。
 - 退出并重新启动应用，确认地址和设备名恢复，但不会自动连接；重新连接后仍进入普通投放。
 - 在常见竖屏、横屏和较小手机尺寸检查输入、状态面板和操作按钮不重叠。
 

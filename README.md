@@ -5,7 +5,7 @@ MarkerDeck 是一套用于影视拍摄与后期跟踪的局域网多屏纯色/�
 ## 主要功能
 
 - 绿色、蓝色和浅灰色背景预设
-- 背景颜色、明度、十字颜色、尺寸、粗细与位置调整
+- 背景颜色、总体亮度、十字颜色、尺寸、粗细与位置调整
 - 隐藏十字，切换为纯色画面
 - 添加间距受控且互不重叠的随机跟踪点
 - 控制端查看设备状态、重命名、分组、批量修改和清理离线设备
@@ -67,6 +67,7 @@ http://localhost:8765/markerdeck-launch.html
 - `markerdeck-base.css`：基础页面、投放画布、通用控件、导出工具和启动页样式。
 - `markerdeck-control.css`：控制端工作区、设备列表、分组和设备管理样式。
 - `markerdeck-mobile.css`：移动响应式规则、对话框和导出进度样式；三个 CSS 按此处列出的顺序加载，以保持原有级联结果。
+- `markerdeck-visual-state.js`：总体亮度默认值、状态 canonicalization、legacy RGB 折色与颜色计算。
 - `markerdeck-core.js`：DOM 引用、共享状态、存储兼容和状态读写。
 - `markerdeck-api.js`：HTTP、SSE、视频服务和设备协议调用。
 - `markerdeck-canvas.js`：画布尺寸、确定性绘制和设备缩略图。
@@ -116,7 +117,7 @@ v1.3.0 保留旧版 Chroma Cross 的迁移兼容：旧的 `/chroma-launch.html` 
 - 推荐 Node.js 24
 - Windows 客户端使用 Electron Builder 构建完整目录 ZIP
 - MP4 导出由 FFmpeg 完成
-- Android 已开始 MD-A09 Host MVP：设置页提供本地投放、连接局域网宿主、本机作为宿主三入口；内置宿主复用 `src/web` assets，提供控制页、LAN 地址/二维码、状态/SSE/锁命令闭环，并通过 `connectedDevice` 前台服务在 Activity 离开后继续运行。Android 不提供 FFmpeg/MP4 导出，桌面 Node 服务继续保持视频能力。MD-A03 的普通投放生命周期恢复、真实设备、1 秒内恢复、连续 20 次循环和 OEM 差异验证仍待完成；尚不是正式 Android 客户端 Release
+- Android 已开始 MD-A09 Host MVP：设置页提供本地投放、连接局域网宿主、本机作为宿主三入口；内置宿主复用 `src/web` assets，提供控制页、LAN 地址/二维码、状态/SSE/锁命令闭环，并通过 `connectedDevice` 前台服务在 Activity 离开后继续运行。MD-A11 增加仅作用于投放 Activity 的 100% 窗口亮度、总体亮度、legacy RGB 折色和 SSE 暂断时的注册心跳锁定回退。Android 不提供 FFmpeg/MP4 导出，桌面 Node 服务继续保持视频能力。MD-A03 的普通投放生命周期恢复、真实设备、1 秒内恢复、连续 20 次循环和 OEM 差异验证仍待完成；尚不是正式 Android 客户端 Release
 - 生成的 ZIP、Node.js 和 FFmpeg 运行时不提交到普通 Git 历史，而是放入 GitHub Releases
 
 常用命令：

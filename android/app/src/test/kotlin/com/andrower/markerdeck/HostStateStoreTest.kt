@@ -16,6 +16,7 @@ class HostStateStoreTest {
         assertEquals("session-1", result.sessionId)
         assertEquals("入口屏", result.name)
         assertEquals("#112233", result.state["bgColor"])
+        assertEquals("100", result.state["overallBrightness"])
         assertEquals(1, store.getDevices().size)
         assertEquals("device-1", store.getDevices().single().deviceId)
     }
@@ -46,7 +47,8 @@ class HostStateStoreTest {
         val preset = store.savePreset("暗场", mapOf("bgBrightness" to "30"))
 
         assertNotNull(preset)
-        assertEquals("30", store.getPresets().last().state["bgBrightness"])
+        assertEquals("#004d00", store.getPresets().last().state["bgColor"])
+        assertEquals("100", store.getPresets().last().state["bgBrightness"])
 
         val delivery = store.createLockCommand(listOf("session-1"), enabled = true)
         assertEquals(1, delivery.status.pendingCount)
@@ -60,6 +62,20 @@ class HostStateStoreTest {
     }
 
     @Test
+    fun registrationHeartbeatReturnsPersistedLockCommandAndChineseName() {
+        val store = MarkerDeckHostStateStore()
+        store.register(request(name = "中文投放屏"))
+        val delivery = store.createLockCommand(listOf("session-1"), enabled = true)
+
+        val heartbeat = store.register(request(name = "", updateName = false))
+
+        assertEquals("中文投放屏", heartbeat.name)
+        assertEquals("lock", heartbeat.state["lockCommand"])
+        assertEquals(delivery.commandId, heartbeat.state["lockCommandId"])
+        assertEquals("100", heartbeat.state["overallBrightness"])
+    }
+
+    @Test
     fun removesOnlyOfflineDevicesAndSupportsGlobalLock() {
         var now = 100_000L
         val store = MarkerDeckHostStateStore(clock = { now })
@@ -70,6 +86,7 @@ class HostStateStoreTest {
         val delivery = store.broadcastLock(enabled = false)
 
         assertEquals(0, delivery.status.targetCount)
+        assertTrue(delivery.global)
         assertEquals(delivery.commandId, store.currentGlobalLockCommandId())
     }
 
