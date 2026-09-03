@@ -46,6 +46,91 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:text="@string/mode_label"
+                android:textColor="@color/markerdeck_foreground"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/localProjectionButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/markerdeck_primary_button"
+                android:minHeight="52dp"
+                android:text="@string/local_projection"
+                android:textAllCaps="false"
+                android:textColor="@color/markerdeck_background"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/connectButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/markerdeck_secondary_button"
+                android:minHeight="52dp"
+                android:text="@string/connect_lan_host"
+                android:textAllCaps="false"
+                android:textColor="@color/markerdeck_foreground"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                tools:ignore="ButtonStyle" />
+
+            <Button
+                android:id="@+id/hostModeButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/markerdeck_secondary_button"
+                android:minHeight="52dp"
+                android:text="@string/lan_host_mode"
+                android:textAllCaps="false"
+                android:textColor="@color/markerdeck_foreground"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                tools:ignore="ButtonStyle" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="@string/host_name_label"
+                android:textColor="@color/markerdeck_foreground"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/hostNameInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:autofillHints="name"
+                android:background="@drawable/markerdeck_input"
+                android:hint="@string/host_name_hint"
+                android:imeOptions="actionDone"
+                android:inputType="textCapSentences"
+                android:maxLength="40"
+                android:maxLines="1"
+                android:minHeight="52dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:textColor="@color/markerdeck_foreground"
+                android:textColorHint="@color/markerdeck_muted"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/host_name_helper"
+                android:textColor="@color/markerdeck_muted"
+                android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="@string/service_address_label"
                 android:textColor="@color/markerdeck_foreground"
                 android:textSize="14sp"
@@ -189,19 +274,6 @@
                 android:textColor="@color/markerdeck_foreground"
                 android:textSize="14sp"
                 tools:ignore="ButtonStyle" />
-
-            <Button
-                android:id="@+id/connectButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="28dp"
-                android:background="@drawable/markerdeck_primary_button"
-                android:minHeight="52dp"
-                android:text="@string/connect"
-                android:textAllCaps="false"
-                android:textColor="@color/markerdeck_background"
-                android:textSize="15sp"
-                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/settingsStatus"

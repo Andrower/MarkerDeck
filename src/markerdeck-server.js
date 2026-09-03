@@ -703,7 +703,13 @@ async function handler(req, res) {
       port: PORT,
       url: `http://${lanIp}:${PORT}${LAUNCH_PAGE}`,
       discoveryPort: DISCOVERY_PORT,
-      protocolVersion: DISCOVERY_PROTOCOL_VERSION
+      protocolVersion: DISCOVERY_PROTOCOL_VERSION,
+      capabilities: {
+        videoExport: true,
+        pngExport: true,
+        sse: true,
+        udpDiscovery: true
+      }
     }), "application/json; charset=utf-8");
   }
 

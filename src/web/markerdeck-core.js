@@ -51,6 +51,7 @@
     videoDurationInput: byId("videoDuration"),
     exportVideoBtn: byId("exportVideoBtn"),
     exportAllVideosBtn: byId("exportAllVideosBtn"),
+    videoExportTools: byId("videoExportTools"),
     videoProgressWindow: byId("videoProgressWindow"),
     videoProgressTitle: byId("videoProgressTitle"),
     videoProgressPercent: byId("videoProgressPercent"),
@@ -331,8 +332,17 @@
     sessionId: createSessionId(),
     pageInstanceId: createRandomId("page"),
     sessionClaimChannel: null,
-    sessionConflictResolver: null
+    sessionConflictResolver: null,
+    capabilities: { videoExport: true, pngExport: true }
   };
+
+  function applyCapabilities(capabilities = {}) {
+    state.capabilities = { ...state.capabilities, ...capabilities };
+    const videoSupported = state.capabilities.videoExport !== false;
+    if (dom.videoExportTools) dom.videoExportTools.hidden = !videoSupported;
+    if (dom.exportVideoBtn) dom.exportVideoBtn.disabled = !videoSupported;
+    if (dom.exportAllVideosBtn) dom.exportAllVideosBtn.disabled = !videoSupported;
+  }
 
   function initInputGuards() {
     document.querySelectorAll("img, canvas").forEach((element) => {
@@ -365,6 +375,7 @@
     setState,
     makeRandomSeed,
     updateStatus,
+    applyCapabilities,
     isTextEditingTarget,
     initInputGuards
   };

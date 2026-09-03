@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added the MD-A09 Android Host MVP first vertical slice: explicit local projection, LAN-host connection, and this-device-host mode entries; shared `src/web` Gradle assets; NanoHTTPD static/API/SSE/preset/device/lock handling; ZXing QR generation; UDP 8766 discovery response; foreground-only lifecycle cleanup; and Android capability reporting that disables video export while desktop Node/FFmpeg behavior remains unchanged.
 - Completed frontend modularization phase 1: split screen styles into ordered `markerdeck-base.css`, `markerdeck-control.css`, and `markerdeck-mobile.css` files, split the classic browser code into explicit core/API/canvas/export/presets/devices/projection/settings/launcher modules, and kept `markerdeck-bootstrap.js` as the sole assembly entry. The screen remains usable over HTTP and `file://` without a bundler or runtime dependency.
 - Added an exact server static-asset allowlist with CSS/JavaScript MIME types, HTML reference and external-script syntax checks, and integration coverage for successful assets and unknown-resource 404 responses.
 - Added Android projection emergency exit: the existing local three-tap unlock path can reveal a temporary native “退出投放” button, whose 8-second native timeout relocks the page through a one-way JavaScript hook. The button returns to Android settings without calling `/api/shutdown`; remote unlock, shortcuts, WebView errors, and renderer recovery keep their existing behavior.

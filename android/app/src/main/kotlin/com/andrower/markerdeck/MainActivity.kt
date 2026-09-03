@@ -69,6 +69,9 @@ class MainActivity : Activity() {
     private lateinit var settingsStatus: TextView
     private lateinit var systemPermissionSettingsButton: Button
     private lateinit var connectButton: Button
+    private lateinit var localProjectionButton: Button
+    private lateinit var hostModeButton: Button
+    private lateinit var hostNameInput: EditText
     private lateinit var webView: WebView
     private lateinit var displayStatusPanel: View
     private lateinit var displayStatusMessage: TextView
@@ -82,6 +85,8 @@ class MainActivity : Activity() {
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var discoveryScanner: MarkerDeckDiscoveryScanner
+    private lateinit var hostLifecycleController: HostLifecycleController
+    private var activeWebMode = AndroidWebMode.NONE
     private var displayActive = false
     private var displayLoadFailed = false
     private var webViewHasDisplayPage = false
@@ -130,7 +135,16 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         settingsRepository = SettingsRepository(applicationContext.markerdeckDataStore)
+        hostLifecycleController = HostLifecycleController(applicationContext) {
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    showSettingsScreen()
+                    showSettingsError(getString(R.string.host_stopped))
+                }
+            }
+        }
         bindViews()
+        hostNameInput.setText(hostLifecycleController.hostName())
         configureWebView(webView)
         bindActions()
         discoveryScanner = MarkerDeckDiscoveryScanner(
@@ -201,6 +215,9 @@ class MainActivity : Activity() {
         settingsStatus = findViewById(R.id.settingsStatus)
         systemPermissionSettingsButton = findViewById(R.id.systemPermissionSettingsButton)
         connectButton = findViewById(R.id.connectButton)
+        localProjectionButton = findViewById(R.id.localProjectionButton)
+        hostModeButton = findViewById(R.id.hostModeButton)
+        hostNameInput = findViewById(R.id.hostNameInput)
         webView = findViewById(R.id.displayWebView)
         displayStatusPanel = findViewById(R.id.displayStatusPanel)
         displayStatusMessage = findViewById(R.id.displayStatusMessage)
@@ -459,6 +476,12 @@ class MainActivity : Activity() {
 
     private fun bindActions() {
         connectButton.setOnClickListener { connectFromSettings() }
+        localProjectionButton.setOnClickListener {
+            startEmbeddedHost(EmbeddedHostMode.LOCAL_PROJECTION)
+        }
+        hostModeButton.setOnClickListener {
+            startEmbeddedHost(EmbeddedHostMode.LAN_HOST)
+        }
         systemPermissionSettingsButton.setOnClickListener { openSystemPermissionSettings() }
         refreshDiscoveryButton.setOnClickListener { discoveryScanner.refresh() }
         retryButton.setOnClickListener { loadDisplayPage() }
@@ -688,6 +711,7 @@ class MainActivity : Activity() {
     }
 
     private fun connectFromSettings() {
+        hostLifecycleController.stop()
         val normalizedAddress = try {
             normalizeServiceAddress(serviceAddressInput.text.toString())
         } catch (error: IllegalArgumentException) {
@@ -712,11 +736,13 @@ class MainActivity : Activity() {
             deviceName = normalizedName
         )
         connectButton.isEnabled = false
+        setEmbeddedModeButtonsEnabled(false)
         serviceAddressInput.isEnabled = false
         deviceNameInput.isEnabled = false
         settingsStatus.setText(R.string.saving_settings_status)
         val saveErrorHandler = CoroutineExceptionHandler { _, error ->
             connectButton.isEnabled = true
+            setEmbeddedModeButtonsEnabled(true)
             serviceAddressInput.isEnabled = true
             deviceNameInput.isEnabled = true
             showSettingsError(error.message ?: getString(R.string.settings_save_failed))
@@ -732,6 +758,12 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun setEmbeddedModeButtonsEnabled(enabled: Boolean) {
+        localProjectionButton.isEnabled = enabled
+        hostModeButton.isEnabled = enabled
+        hostNameInput.isEnabled = enabled
+    }
+
     private fun showDisplayScreen(settings: MarkerDeckSettings): Boolean {
         val normalizedAddress = normalizeServiceAddress(settings.serviceAddress)
         val normalizedSettings = settings.copy(
@@ -743,6 +775,7 @@ class MainActivity : Activity() {
         }
 
         clearEmergencyControls()
+        activeWebMode = AndroidWebMode.REMOTE_DISPLAY
 
         settingsDraft = settingsDraftFromSaved(normalizedSettings)
         applySettingsDraftToViews()
@@ -762,10 +795,78 @@ class MainActivity : Activity() {
         displayScreen.bringToFront()
         updateDiscoveryLifecycle()
         connectButton.isEnabled = true
+        setEmbeddedModeButtonsEnabled(true)
         applyDisplayWindowState()
         loadDisplayPage(normalizedSettings)
         registerScreenStateReceiver()
         return true
+    }
+
+    private fun startEmbeddedHost(mode: EmbeddedHostMode) {
+        val hostName = normalizeHostName(hostNameInput.text.toString())
+        hostNameInput.error = null
+        setEmbeddedModeButtonsEnabled(false)
+        connectButton.isEnabled = false
+        serviceAddressInput.isEnabled = false
+        deviceNameInput.isEnabled = false
+        settingsStatus.setText(
+            if (mode == EmbeddedHostMode.LOCAL_PROJECTION) {
+                R.string.starting_local_service
+            } else {
+                R.string.starting_lan_host
+            }
+        )
+        settingsStatus.setTextColor(getColor(R.color.markerdeck_muted))
+        val errorHandler = CoroutineExceptionHandler { _, error ->
+            runOnUiThread {
+                setEmbeddedModeButtonsEnabled(true)
+                connectButton.isEnabled = true
+                serviceAddressInput.isEnabled = true
+                deviceNameInput.isEnabled = true
+                showSettingsError(error.message ?: getString(R.string.host_start_failed))
+            }
+        }
+        activityScope.launch(Dispatchers.IO + errorHandler) {
+            val hostSession = hostLifecycleController.start(mode, hostName)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                showEmbeddedHostScreen(hostSession)
+            }
+        }
+    }
+
+    private fun showEmbeddedHostScreen(hostSession: EmbeddedHostSession) {
+        if (!prepareWebViewForProjection()) {
+            hostLifecycleController.stop()
+            setEmbeddedModeButtonsEnabled(true)
+            connectButton.isEnabled = true
+            showSettingsError(getString(R.string.display_renderer_recovery_failed_settings))
+            return
+        }
+        clearEmergencyControls()
+        activeWebMode = when (hostSession.mode) {
+            EmbeddedHostMode.LOCAL_PROJECTION -> AndroidWebMode.LOCAL_PROJECTION
+            EmbeddedHostMode.LAN_HOST -> AndroidWebMode.HOST_CONTROL
+        }
+        displayOrigin = hostSession.origin
+        displayDeviceName = null
+        mainFrameUrl = hostSession.url
+        cleanupNavigationPending = false
+        displayActive = true
+        displayLoadFailed = false
+        displayPageHealthy = false
+        displayMainFrameFailed = false
+        displayLoadInFlight = false
+        displayDiagnosticState = ProjectionDiagnosticState.PROJECTION_ACTIVE
+        clearTransientCapabilityWarning()
+        settingsScreen.visibility = View.GONE
+        displayScreen.visibility = View.VISIBLE
+        displayScreen.bringToFront()
+        updateDiscoveryLifecycle()
+        clearDisplayWindowState()
+        applyDisplayWindowState()
+        loadDisplayPage()
+        if (activeWebMode.isProjectionSurface) registerScreenStateReceiver()
     }
 
     private fun loadDisplayPage(
@@ -799,7 +900,11 @@ class MainActivity : Activity() {
         val normalizedAddress = normalizeServiceAddress(address)
         if (displayOrigin == null) displayOrigin = normalizedAddress
         if (displayDeviceName == null) displayDeviceName = normalizeDeviceName(name)
-        val displayUrl = buildDisplayUrl(normalizedAddress, name)
+        val displayUrl = when (activeWebMode) {
+            AndroidWebMode.LOCAL_PROJECTION,
+            AndroidWebMode.HOST_CONTROL -> buildWebModeUrl(normalizedAddress, activeWebMode)
+            else -> buildDisplayUrl(normalizedAddress, name)
+        }
         webViewHasDisplayPage = true
         mainFrameUrl = displayUrl
         cleanupNavigationPending = false
@@ -914,14 +1019,16 @@ class MainActivity : Activity() {
 
     private fun showSettingsScreen() {
         clearEmergencyControls()
+        hostLifecycleController.stop()
         val shouldClearWebView = webViewHasDisplayPage
         val keyguardManager = getSystemService(KEYGUARD_SERVICE) as? KeyguardManager
         val shouldFinish = shouldFinishBeforeShowingSettings(
-            projectionActive = displayActive,
+            projectionActive = displayActive && activeWebMode.isProjectionSurface,
             isKeyguardLocked = keyguardManager?.isKeyguardLocked == true
         )
         unregisterScreenStateReceiver()
         clearProjectionRuntimeStateForActivity()
+        activeWebMode = AndroidWebMode.NONE
         displayDeviceName = null
         displayOrigin = null
         mainFrameUrl = null
@@ -946,6 +1053,7 @@ class MainActivity : Activity() {
         displayScreen.visibility = View.GONE
         settingsScreen.visibility = View.VISIBLE
         connectButton.isEnabled = true
+        setEmbeddedModeButtonsEnabled(true)
         serviceAddressInput.isEnabled = true
         deviceNameInput.isEnabled = true
         displayDiagnosticMessage.visibility = View.GONE
@@ -983,7 +1091,7 @@ class MainActivity : Activity() {
 
     private fun applyDisplayWindowState() {
         // This gate keeps the settings surface out of the keyguard window path.
-        if (!shouldApplyDisplayWindowState(displayActive)) return
+        if (!shouldApplyDisplayWindowState(displayActive && activeWebMode.isProjectionSurface)) return
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -1017,7 +1125,7 @@ class MainActivity : Activity() {
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private fun registerScreenStateReceiver() {
-        if (screenReceiverRegistered) return
+        if (!displayActive || !activeWebMode.isProjectionSurface || screenReceiverRegistered) return
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
@@ -1237,6 +1345,10 @@ class MainActivity : Activity() {
     }
 
     private fun handleBackPressed() {
+        if (activeWebMode == AndroidWebMode.HOST_CONTROL) {
+            showSettingsScreen()
+            return
+        }
         when (backNavigationDecision(displayActive)) {
             BackNavigationDecision.CONSUME -> Unit
             BackNavigationDecision.FINISH -> finish()
@@ -1310,6 +1422,16 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         activityStarted = false
+        if (activeWebMode == AndroidWebMode.LOCAL_PROJECTION ||
+            activeWebMode == AndroidWebMode.HOST_CONTROL
+        ) {
+            hostLifecycleController.stop()
+            if (!isFinishing && !isDestroyed) {
+                displayActive = false
+                showSettingsScreen()
+                showSettingsError(getString(R.string.host_stopped_foreground_only))
+            }
+        }
         updateDiscoveryLifecycle()
         super.onStop()
     }
@@ -1326,7 +1448,7 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         val savedProjection = validateSavedProjection(
-            projectionActive = displayActive,
+            projectionActive = displayActive && activeWebMode == AndroidWebMode.REMOTE_DISPLAY,
             serviceAddress = displayOrigin,
             deviceName = displayDeviceName
         )
@@ -1338,6 +1460,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        hostLifecycleController.stop()
         if (::discoveryScanner.isInitialized) discoveryScanner.stop()
         activityScope.cancel()
         mainHandler.removeCallbacksAndMessages(null)
@@ -1350,6 +1473,7 @@ class MainActivity : Activity() {
         clearEmergencyControls()
         clearDisplayWindowState()
         displayActive = false
+        activeWebMode = AndroidWebMode.NONE
         if (displayWebViewUsable) {
             webView.stopLoading()
             webView.destroy()

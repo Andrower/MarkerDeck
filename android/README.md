@@ -1,10 +1,20 @@
 # MarkerDeck Android
 
-这是 MD-A03 普通投放恢复、MD-A08 局域网宿主发现和 Android 投放紧急退出实现。它是一个单 Activity 原生薄壳：设置页保存 MarkerDeck 服务地址和设备名，用户明确连接后在 WebView 中加载普通投放页面。实现不包含设备管理、专用设备/Kiosk、Foreground Service、Wake Lock 权限、精确闹钟、后台启动 Activity、辅助功能服务、overlay、root、隐藏 API 或绕过认证的机制。
+这是 MD-A09 Android Host MVP 与 MD-A03 普通投放恢复、MD-A08 局域网宿主发现和 Android 投放紧急退出实现。它是一个单 Activity 原生薄壳：设置/模式页提供本地投放、连接局域网宿主、本机作为宿主三个入口。实现不包含设备管理、专用设备/Kiosk、Foreground Service、Wake Lock 权限、精确闹钟、后台启动 Activity、辅助功能服务、overlay、root、隐藏 API 或绕过认证的机制。
 
 ## 网页静态资源复用边界
 
-当前 APK 不复制或打包网页业务，仍从已验证的 MarkerDeck 服务地址加载 `/markerdeck-screen.html?mode=display`。网页第一阶段拆出的 `markerdeck-base.css`、`markerdeck-control.css`、`markerdeck-mobile.css` 与按顺序加载的 `markerdeck-*.js` 是一个整体静态资产集合；未来若加入 APK 内置离线资源，必须按 HTML 中的原文件名和引用顺序整体复用，并继续把 HTTP/SSE、设备注册和投放同步作为服务端协议边界。不能只复制 HTML，也不能在 Android 端另写一份 Canvas、导出或锁定逻辑；当前 `file://` 模式仍只支持浏览器本地投放。
+APK 的内置宿主通过 Gradle `assets` sourceSet 直接引用仓库 `src/web`，不复制第二份业务文件。`markerdeck-base.css`、`markerdeck-control.css`、`markerdeck-mobile.css` 与按 HTML 顺序加载的 `markerdeck-*.js` 作为整体资产复用；远程投放仍从已验证的服务地址加载 `/markerdeck-screen.html?mode=display`，`file://` 模式仍只支持浏览器本地投放。Android 不另写 Canvas、导出或锁定业务；宿主只提供 HTTP/SSE 协议适配。
+
+## MD-A09 Android Host MVP
+
+- **本地投放**：启动只绑定 `127.0.0.1` 的内置 NanoHTTPD，加载 `http://127.0.0.1:<port>/markerdeck-screen.html?mode=local`，无需外部电脑即可显示和使用现有页面控制。
+- **本机作为宿主**：Activity 前台绑定 LAN 的内置服务，加载 localhost 控制页。控制页从 `/api/info` 获取本机 LAN 地址和 `/qr.svg`，同网浏览器/Android 被控端复用现有注册、状态、SSE、预设和锁命令协议。
+- **连接局域网宿主**：继续使用原地址、自动发现、设备名、普通 `display` WebView、屏幕恢复和三击退出流程。
+- **能力边界**：Android `/api/info` 宣布 `videoExport: false`，网页隐藏视频导出；没有 FFmpeg/MP4 导出。桌面 Node 服务保持视频能力。
+- **生命周期**：内置服务只在 Activity 前台宿主流程中运行；返回设置、离开前台或销毁 Activity 会清理 HTTP、SSE、UDP responder 和多播锁。不承诺后台或锁屏持续托管，后续可靠性单列。
+
+内置服务 API 见 `AndroidHostServer.kt`，包括静态资源、`/api/info`、`/api/discovery`、`/qr.svg`、`/api/register`、`/api/devices`、`/api/state`、`/api/events`、预设、设备设置/清理、设备名称/分组、锁定/ACK 和 `/api/shutdown`。HTTP 状态为进程内，预设与宿主设置使用 SharedPreferences 持久化。
 
 ## 固定版本
 

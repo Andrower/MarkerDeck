@@ -114,7 +114,7 @@ v1.3.0 保留旧版 Chroma Cross 的迁移兼容：旧的 `/chroma-launch.html` 
 - 推荐 Node.js 24
 - Windows 客户端使用 Electron Builder 构建完整目录 ZIP
 - MP4 导出由 FFmpeg 完成
-- Android 当前已完成 MD-A03 P0 屏幕打开/生命周期恢复首片：活动投放期间通过 resume、焦点、亮屏和用户解锁事件恢复可见 WebView/window 状态，并支持已保存投放恢复与 renderer 异常恢复；真实设备、1 秒内恢复、连续 20 次循环和 OEM 差异验证仍待完成；尚不是正式 Android 客户端 Release
+- Android 已开始 MD-A09 Host MVP：设置页提供本地投放、连接局域网宿主、本机作为宿主三入口；内置宿主复用 `src/web` assets，提供控制页、LAN 地址/二维码、状态/SSE/锁命令闭环。它只在 Activity 前台运行，不是 Foreground Service，不承诺后台/锁屏持续托管；Android 不提供 FFmpeg/MP4 导出，桌面 Node 服务继续保持视频能力。MD-A03 的普通投放生命周期恢复、真实设备、1 秒内恢复、连续 20 次循环和 OEM 差异验证仍待完成；尚不是正式 Android 客户端 Release
 - 生成的 ZIP、Node.js 和 FFmpeg 运行时不提交到普通 Git 历史，而是放入 GitHub Releases
 
 常用命令：

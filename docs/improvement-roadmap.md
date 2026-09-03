@@ -153,6 +153,17 @@
 - **验收标准**：一个宿主自动填入空且未编辑的字段；多个宿主可点击选择；刷新、网络切换、Activity 暂停/恢复和发现失败不泄漏回调、不覆盖用户输入并回退手动输入；现有投放 URL 拼接、同源校验和 v1.3.0 HTTP/SSE 行为不回归。
 - **依赖**：MD-A01、MD-A02；需要可访问的同一局域网服务端、Android Wi-Fi/以太网设备和多宿主/网络切换测试环境。
 
+#### MD-A09 Android Host MVP 前台宿主
+
+状态：第一纵切实现中；本阶段只承诺 Activity 前台宿主，不是 Foreground Service，也不保证后台或锁屏持续托管。
+
+- **范围**：在 Android 设置/模式入口明确提供“本地投放”“连接局域网宿主”“本机作为宿主”三个互不重叠的入口。前者启动只绑定 loopback 的内置 HTTP 服务并加载 `127.0.0.1` 投放页；后者在 Activity 前台绑定 LAN HTTP 服务并加载 localhost 控制页，控制页通过 `/api/info` 显示本机 LAN 地址和二维码。同网浏览器或 Android 被控端可以使用现有网页注册、状态同步、SSE 和锁定命令闭环。
+- **资产与协议**：Android Gradle `assets` sourceSet 直接引用 `src/web`，不复制第二份 HTML/CSS/经典 JS，并保留既有加载顺序、`file://` 行为和桌面 Node 服务。内置服务采用 NanoHTTPD 和 ZXing core，覆盖静态资源、`/api/info`、发现、注册/设备、状态、SSE、预设、设备名称/分组/清理、锁定/ACK、`/qr.svg` 和 `/api/shutdown`；Android `/api/video*` 明确返回 unsupported，桌面 Node 服务继续提供 FFmpeg 视频能力。
+- **生命周期与清理**：宿主服务、SSE 客户端、设备连接和发现 responder 的运行状态以进程内为主；自定义预设和宿主名称/保留设置持久化。返回设置、Activity 离开前台或销毁时停止服务、SSE、UDP responder 和多播锁；不引入 Node Android runtime，不承诺后台常驻。可靠性、后台限制和锁屏行为另列后续任务，不作为本阶段支持声明。
+- **产物**：模式入口 UI、共享 assets sourceSet、`AndroidHostServer`、纯状态/store、SSE hub、UDP responder、二维码生成器和 `HostLifecycleController`；补充 URL/模式决策、协议响应、状态/预设/锁命令及 HTTP 层 JVM 测试、结构检查和构建验收。
+- **验收标准**：小屏设置页三个入口垂直排列且不重叠；本地投放无需外部电脑即可显示绿幕并响应当前页面控制；本机宿主控制页显示 LAN 地址/二维码，同网浏览器和被控端可注册并完成一次画面状态同步与锁定 ACK；远程连接、自动发现、设备名、普通 WebView 投放、锁屏恢复和三击退出流程不回归；宿主离开 Activity 前台后服务明确停止。
+- **依赖**：MD-A01、MD-A02、MD-A03、MD-A08；需要 Android Studio JBR/SDK、同网浏览器或另一 Android 被控端完成现场闭环验证。
+
 ### 5. 关键门禁与共同验收
 
 - MD-A02 普通投放端 MVP 完成并通过兼容性验收后，继续以普通 Activity 生命周期作为唯一恢复路径，不在文档、界面或 Release 说明中暗示系统级锁定能力。

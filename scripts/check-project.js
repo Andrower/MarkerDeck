@@ -58,6 +58,16 @@ const androidRequiredFiles = [
   "android/app/src/main/kotlin/com/andrower/markerdeck/ServiceUrl.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/Settings.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/SettingsRepository.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/AndroidHostServer.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/HostLifecycleController.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/HostMode.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/HostNetworkAddress.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/HostPreferencesPersistence.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/HostProtocol.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/HostSseHub.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/HostStateStore.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/HostUdpResponder.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/QrSvg.kt",
   "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
   "android/app/src/main/res/drawable/ic_launcher_monochrome.xml",
   "android/app/src/main/res/drawable/markerdeck_input.xml",
@@ -77,6 +87,9 @@ const androidRequiredFiles = [
   "android/app/src/test/kotlin/com/andrower/markerdeck/PermissionSettingsTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/SettingsTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/ProjectionEmergencyControlsTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/HostProtocolTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/HostStateStoreTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/AndroidHostServerTest.kt",
   "android/README.md",
   ".github/workflows/android-check.yml"
 ];
@@ -84,6 +97,12 @@ const androidRequiredFiles = [
 requiredFiles.concat(androidRequiredFiles).forEach((relativePath) => {
   assert.ok(fs.existsSync(path.join(root, relativePath)), `Missing required file: ${relativePath}`);
 });
+
+const androidBuild = fs.readFileSync(path.join(root, "android/app/build.gradle.kts"), "utf8");
+assert.match(androidBuild, /assets\.srcDir\(rootProject\.file\("\.\.\/src\/web"\)\)/,
+  "Android assets must use the shared src/web sourceSet");
+assert.match(androidBuild, /org\.nanohttpd:nanohttpd:/, "Android host must use NanoHTTPD");
+assert.match(androidBuild, /com\.google\.zxing:core:/, "Android host must use ZXing core");
 
 const javascriptFiles = [
   "src/markerdeck-server.js",

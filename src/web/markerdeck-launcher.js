@@ -15,6 +15,7 @@
     }
     try {
       const info = await app.api.getInfo();
+      app.core.applyCapabilities(info.capabilities);
       dom.lanAddress.textContent = info.url;
       dom.qrImage.src = `/qr.svg?text=${encodeURIComponent(info.url)}`;
       dom.qrBox.classList.remove("unavailable");

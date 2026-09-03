@@ -2,6 +2,13 @@
 <resources>
     <string name="app_name">MarkerDeck</string>
     <string name="ordinary_display">普通投放</string>
+    <string name="mode_label">运行模式</string>
+    <string name="local_projection">本地投放</string>
+    <string name="connect_lan_host">连接局域网宿主</string>
+    <string name="lan_host_mode">本机作为宿主</string>
+    <string name="host_name_label">宿主名称</string>
+    <string name="host_name_hint">例如：摄影棚主控</string>
+    <string name="host_name_helper">局域网浏览器和被控端会看到这个名称；服务只在 Activity 前台运行。</string>
     <string name="service_address_label">MarkerDeck 服务地址</string>
     <string name="service_address_hint">例如 192.168.1.2:8765</string>
     <string name="service_address_helper">可输入 IP、IP:端口、localhost:端口或完整 HTTP(S) 地址。</string>
@@ -26,6 +33,11 @@
     <string name="settings_restored_status">已恢复配置，尚未连接。</string>
     <string name="saving_settings_status">正在保存配置&#8230;</string>
     <string name="settings_save_failed">配置保存失败。</string>
+    <string name="starting_local_service">正在启动本地投放服务&#8230;</string>
+    <string name="starting_lan_host">正在启动局域网宿主&#8230;</string>
+    <string name="host_start_failed">内置宿主启动失败。</string>
+    <string name="host_stopped">宿主服务已停止。</string>
+    <string name="host_stopped_foreground_only">Activity 已离开前台，宿主服务已停止。</string>
     <string name="invalid_address">服务地址无效。</string>
     <string name="device_name_required">请输入设备名称。</string>
     <string name="display_loading">正在加载投放页面&#8230;</string>
