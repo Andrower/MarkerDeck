@@ -2,6 +2,10 @@
 
 这是 MD-A03 普通投放恢复、MD-A08 局域网宿主发现和 Android 投放紧急退出实现。它是一个单 Activity 原生薄壳：设置页保存 MarkerDeck 服务地址和设备名，用户明确连接后在 WebView 中加载普通投放页面。实现不包含设备管理、专用设备/Kiosk、Foreground Service、Wake Lock 权限、精确闹钟、后台启动 Activity、辅助功能服务、overlay、root、隐藏 API 或绕过认证的机制。
 
+## 网页静态资源复用边界
+
+当前 APK 不复制或打包网页业务，仍从已验证的 MarkerDeck 服务地址加载 `/markerdeck-screen.html?mode=display`。网页第一阶段拆出的 `markerdeck-base.css`、`markerdeck-control.css`、`markerdeck-mobile.css` 与按顺序加载的 `markerdeck-*.js` 是一个整体静态资产集合；未来若加入 APK 内置离线资源，必须按 HTML 中的原文件名和引用顺序整体复用，并继续把 HTTP/SSE、设备注册和投放同步作为服务端协议边界。不能只复制 HTML，也不能在 Android 端另写一份 Canvas、导出或锁定逻辑；当前 `file://` 模式仍只支持浏览器本地投放。
+
 ## 固定版本
 
 - Android Gradle Plugin：`9.0.1`

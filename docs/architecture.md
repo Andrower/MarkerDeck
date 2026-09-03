@@ -17,6 +17,8 @@ MarkerDeck/
 ## 边界
 
 - `src` 是唯一业务源码，不为不同系统复制页面或服务端。
+- `src/web/markerdeck-screen.html` 只保存结构；同目录的 `markerdeck-base.css`、`markerdeck-control.css`、`markerdeck-mobile.css` 和经典外部脚本按固定顺序组成可通过 HTTP 或 `file://` 加载的静态资产集合。CSS 顺序对应基础公共样式、控制端设备管理、响应式与对话框。
+- `markerdeck-core.js` 集中 DOM 引用和共享状态；`markerdeck-api.js` 是唯一 HTTP/SSE 入口；`markerdeck-canvas.js` 只负责 Canvas 输出；`markerdeck-export.js` 只负责导出；`markerdeck-devices.js` 只负责设备/控制端管理；`markerdeck-projection.js` 负责投放同步、锁定和三击退出；`markerdeck-bootstrap.js` 只负责模块初始化和启动。
 - 服务端通过 SSE 向控制端和投放端推送设备、状态、命令及 ACK 事件，HTTP API 负责写操作和断线恢复。
 - `deviceId` 标识物理设备，`sessionId` 标识独立接收页面；控制目标使用 `sessionId`。
 - `platform` 只处理系统启动差异。

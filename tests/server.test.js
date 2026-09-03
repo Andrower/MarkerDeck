@@ -145,8 +145,41 @@ test("serves launch and control pages", async () => {
   const display = await fetch(`${origin}/markerdeck-screen.html?mode=display&androidDeviceName=${encodeURIComponent("入口 & 屏")}`);
   assert.equal(display.status, 200);
   const displayHtml = await display.text();
-  assert.match(displayHtml, /androidProvidedDeviceName/);
-  assert.match(displayHtml, /saveLocalDeviceName\(providedDeviceName\)/);
+  assert.match(displayHtml, /<link rel="stylesheet" href="markerdeck-base\.css">/);
+  assert.match(displayHtml, /<link rel="stylesheet" href="markerdeck-control\.css">/);
+  assert.match(displayHtml, /<link rel="stylesheet" href="markerdeck-mobile\.css">/);
+  assert.match(displayHtml, /<script src="markerdeck-projection\.js"><\/script>/);
+});
+
+test("serves modular screen assets with exact content types and rejects unknown resources", async () => {
+  const assets = [
+    ["/markerdeck-base.css", "text/css"],
+    ["/markerdeck-control.css", "text/css"],
+    ["/markerdeck-mobile.css", "text/css"],
+    ["/markerdeck-core.js", "text/javascript"],
+    ["/markerdeck-api.js", "text/javascript"],
+    ["/markerdeck-canvas.js", "text/javascript"],
+    ["/markerdeck-export.js", "text/javascript"],
+    ["/markerdeck-presets.js", "text/javascript"],
+    ["/markerdeck-devices.js", "text/javascript"],
+    ["/markerdeck-projection.js", "text/javascript"],
+    ["/markerdeck-settings.js", "text/javascript"],
+    ["/markerdeck-launcher.js", "text/javascript"],
+    ["/markerdeck-bootstrap.js", "text/javascript"]
+  ];
+  for (const [assetPath, contentType] of assets) {
+    const response = await fetch(`${origin}${assetPath}`);
+    assert.equal(response.status, 200, assetPath);
+    assert.match(response.headers.get("content-type"), new RegExp(`^${contentType}`));
+    assert.ok((await response.text()).length > 0, assetPath);
+  }
+
+  const unknown = await fetch(`${origin}/markerdeck-unknown.js`);
+  assert.equal(unknown.status, 404);
+  const removedStylesheet = await fetch(`${origin}/markerdeck-screen.css`);
+  assert.equal(removedStylesheet.status, 404);
+  const source = await fetch(`${origin}/../markerdeck-server.js`);
+  assert.equal(source.status, 404);
 });
 
 test("redirects legacy page URLs while preserving mode query parameters", async () => {

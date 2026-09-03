@@ -7,12 +7,31 @@ const { spawnSync } = require("node:child_process");
 const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
+const screenStylesheets = [
+  "src/web/markerdeck-base.css",
+  "src/web/markerdeck-control.css",
+  "src/web/markerdeck-mobile.css"
+];
+const screenScripts = [
+  "src/web/markerdeck-core.js",
+  "src/web/markerdeck-api.js",
+  "src/web/markerdeck-canvas.js",
+  "src/web/markerdeck-export.js",
+  "src/web/markerdeck-presets.js",
+  "src/web/markerdeck-devices.js",
+  "src/web/markerdeck-projection.js",
+  "src/web/markerdeck-settings.js",
+  "src/web/markerdeck-launcher.js",
+  "src/web/markerdeck-bootstrap.js"
+];
+const screenAssets = [...screenStylesheets, ...screenScripts];
 const requiredFiles = [
   "README.md",
   "LICENSE",
   "src/markerdeck-server.js",
   "src/web/markerdeck-screen.html",
   "src/web/markerdeck-launch.html",
+  ...screenAssets,
   "desktop/electron/main.js",
   "desktop/electron/preload.js",
   "desktop/electron/package.json",
@@ -69,7 +88,8 @@ requiredFiles.concat(androidRequiredFiles).forEach((relativePath) => {
 const javascriptFiles = [
   "src/markerdeck-server.js",
   "desktop/electron/main.js",
-  "desktop/electron/preload.js"
+  "desktop/electron/preload.js",
+  ...screenAssets.filter((relativePath) => relativePath.endsWith(".js"))
 ];
 
 javascriptFiles.forEach((relativePath) => {
@@ -86,19 +106,58 @@ const htmlFiles = [
   "src/web/markerdeck-launch.html"
 ];
 
+function getAttribute(tag, name) {
+  return tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i"))?.[1] || "";
+}
+
+function checkLocalReference(htmlPath, reference, kind) {
+  const cleanReference = reference.split(/[?#]/, 1)[0];
+  assert.ok(cleanReference, `Empty ${kind} reference: ${htmlPath}`);
+  assert.ok(!/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(cleanReference), `External ${kind} reference is not supported: ${htmlPath} -> ${reference}`);
+  const resolvedPath = path.resolve(path.dirname(path.join(root, htmlPath)), cleanReference);
+  assert.ok(resolvedPath.startsWith(`${root}${path.sep}`), `Out-of-tree ${kind} reference: ${htmlPath} -> ${reference}`);
+  assert.ok(fs.existsSync(resolvedPath), `Missing ${kind} reference: ${htmlPath} -> ${reference}`);
+}
+
 htmlFiles.forEach((relativePath) => {
   const html = fs.readFileSync(path.join(root, relativePath), "utf8");
-  const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
-  assert.ok(scripts.length > 0, `No inline scripts found: ${relativePath}`);
-  scripts.forEach((match, index) => {
-    new vm.Script(match[1], { filename: `${relativePath}:inline-${index + 1}` });
+  const scriptTags = [...html.matchAll(/<script\b[^>]*>/gi)].map((match) => match[0]);
+  scriptTags
+    .map((tag) => getAttribute(tag, "src"))
+    .filter(Boolean)
+    .forEach((reference) => checkLocalReference(relativePath, reference, "script"));
+  [...html.matchAll(/<link\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .filter((tag) => /\brel\s*=\s*["'][^"']*\bstylesheet\b/i.test(tag))
+    .map((tag) => getAttribute(tag, "href"))
+    .filter(Boolean)
+    .forEach((reference) => checkLocalReference(relativePath, reference, "stylesheet"));
+
+  const inlineScripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
+    .filter((match) => !getAttribute(match[1], "src"));
+  if (relativePath.endsWith("markerdeck-launch.html")) {
+    assert.ok(inlineScripts.length > 0, `No inline scripts found: ${relativePath}`);
+  }
+  inlineScripts.forEach((match, index) => {
+    new vm.Script(match[2], { filename: `${relativePath}:inline-${index + 1}` });
   });
 });
 
 const displayPage = fs.readFileSync(path.join(root, "src/web/markerdeck-screen.html"), "utf8");
-assert.match(displayPage, /androidDeviceName/);
-assert.match(displayPage, /saveLocalDeviceName\(providedDeviceName\)/);
-assert.match(displayPage, /await requestDisplayName\(\)/);
+const projectionModule = fs.readFileSync(path.join(root, "src/web/markerdeck-projection.js"), "utf8");
+const linkedStylesheets = [...displayPage.matchAll(/<link\b[^>]*>/gi)]
+  .map((match) => match[0])
+  .filter((tag) => /\brel\s*=\s*["'][^"']*\bstylesheet\b/i.test(tag))
+  .map((tag) => getAttribute(tag, "href"));
+assert.deepEqual(
+  linkedStylesheets,
+  screenStylesheets.map((relativePath) => path.basename(relativePath)),
+  "Screen stylesheets must retain their explicit cascade order"
+);
+assert.match(displayPage, /markerdeck-projection\.js/);
+assert.match(projectionModule, /androidProvidedDeviceName/);
+assert.match(projectionModule, /saveLocalDeviceName\(providedDeviceName\)/);
+assert.match(projectionModule, /await app\.core\.requestDisplayName\(\)/);
 
 const launcherMode = fs.statSync(path.join(root, "platform/macos/start-markerdeck-server.command")).mode;
 assert.ok((launcherMode & 0o111) !== 0, "macOS launcher must be executable");

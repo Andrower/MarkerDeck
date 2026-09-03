@@ -37,9 +37,22 @@ const SETTINGS_FILE = path.join(DATA_ROOT, "markerdeck-settings.json");
 const LEGACY_SETTINGS_FILE = path.join(DATA_ROOT, "chroma-settings.json");
 const DEVICE_OFFLINE_MS = 5000;
 const DEFAULT_DEVICE_RETENTION_MS = 10 * 60 * 1000;
-const PAGES = new Set([
-  "markerdeck-screen.html",
-  "markerdeck-launch.html"
+const STATIC_ASSETS = new Map([
+  ["/markerdeck-screen.html", { file: "markerdeck-screen.html", type: "text/html; charset=utf-8" }],
+  ["/markerdeck-launch.html", { file: "markerdeck-launch.html", type: "text/html; charset=utf-8" }],
+  ["/markerdeck-base.css", { file: "markerdeck-base.css", type: "text/css; charset=utf-8" }],
+  ["/markerdeck-control.css", { file: "markerdeck-control.css", type: "text/css; charset=utf-8" }],
+  ["/markerdeck-mobile.css", { file: "markerdeck-mobile.css", type: "text/css; charset=utf-8" }],
+  ["/markerdeck-core.js", { file: "markerdeck-core.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-api.js", { file: "markerdeck-api.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-canvas.js", { file: "markerdeck-canvas.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-export.js", { file: "markerdeck-export.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-presets.js", { file: "markerdeck-presets.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-devices.js", { file: "markerdeck-devices.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-projection.js", { file: "markerdeck-projection.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-settings.js", { file: "markerdeck-settings.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-launcher.js", { file: "markerdeck-launcher.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-bootstrap.js", { file: "markerdeck-bootstrap.js", type: "text/javascript; charset=utf-8" }]
 ]);
 const LEGACY_PAGE_REDIRECTS = new Map([
   ["/chroma-cross-screen.html", "/markerdeck-screen.html"],
@@ -1063,12 +1076,10 @@ async function handler(req, res) {
     }
   }
 
-  const fileName = path.basename(url.pathname);
-  if (!PAGES.has(fileName)) return send(res, 404, "Not found");
-  const filePath = path.join(WEB_ROOT, fileName);
-  const ext = path.extname(filePath);
-  const type = ext === ".html" ? "text/html; charset=utf-8" : ext === ".js" ? "text/javascript; charset=utf-8" : "application/octet-stream";
-  send(res, 200, fs.readFileSync(filePath), type);
+  const asset = STATIC_ASSETS.get(url.pathname);
+  if (!asset || req.method !== "GET") return send(res, 404, "Not found");
+  const filePath = path.join(WEB_ROOT, asset.file);
+  return send(res, 200, fs.readFileSync(filePath), asset.type);
 }
 
 server = http.createServer((req, res) => {

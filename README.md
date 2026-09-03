@@ -60,6 +60,24 @@ http://localhost:8765/markerdeck-launch.html
 
 正式页面名为 `markerdeck-launch.html`（启动页）和 `markerdeck-screen.html`（控制端与投放端页面）。
 
+`markerdeck-screen.html` 只保留页面结构和按顺序加载的经典脚本引用，网页资产位于同一目录，支持 HTTP 服务和 `file://` 直接打开：
+
+- `markerdeck-base.css`：基础页面、投放画布、通用控件、导出工具和启动页样式。
+- `markerdeck-control.css`：控制端工作区、设备列表、分组和设备管理样式。
+- `markerdeck-mobile.css`：移动响应式规则、对话框和导出进度样式；三个 CSS 按此处列出的顺序加载，以保持原有级联结果。
+- `markerdeck-core.js`：DOM 引用、共享状态、存储兼容和状态读写。
+- `markerdeck-api.js`：HTTP、SSE、视频服务和设备协议调用。
+- `markerdeck-canvas.js`：画布尺寸、确定性绘制和设备缩略图。
+- `markerdeck-export.js`：PNG、ZIP、MP4 和文件保存流程。
+- `markerdeck-presets.js`：内置/自定义预设及移动端预设选择。
+- `markerdeck-devices.js`：设备列表、分组、选择和控制端设备设置。
+- `markerdeck-projection.js`：本地/投放/控制同步、锁定、三击退出和唤醒锁。
+- `markerdeck-settings.js`：画面参数按钮与设置变化协调。
+- `markerdeck-launcher.js`：启动页、服务信息和角色入口。
+- `markerdeck-bootstrap.js`：唯一装配入口，不持有业务状态。
+
+脚本使用 `window.MarkerDeck` 下的显式模块入口，不使用 bundler 或 ES module；Android 未来若需要离线复用网页资产，应整体复制这组同名 CSS/JS/HTML 文件并保留引用顺序，当前 APK 仍从用户选择的 MarkerDeck 服务地址加载投放页。
+
 手机必须使用启动页显示的局域网 IP 地址，不能使用 `localhost` 或 `127.0.0.1`。
 
 ## 导出图片与视频

@@ -1,0 +1,371 @@
+(function (global) {
+  "use strict";
+
+  const app = global.MarkerDeck = global.MarkerDeck || {};
+  const byId = (id) => document.getElementById(id);
+
+  const dom = {
+    canvas: byId("stage"),
+    panel: byId("panel"),
+    readout: byId("readout"),
+    lockBtn: byId("lockBtn"),
+    hotCorner: byId("hotCorner"),
+    launcher: byId("launcher"),
+    lanAddress: byId("lanAddress"),
+    qrImage: byId("qrImage"),
+    qrBox: document.querySelector(".qr-box"),
+    statusPill: byId("statusPill"),
+    controlQuickconnect: byId("controlQuickconnect"),
+    controlQrImage: byId("controlQrImage"),
+    controlUrlText: byId("controlUrlText"),
+    deviceList: byId("deviceList"),
+    forceLockBtn: byId("forceLockBtn"),
+    stopServerBtn: byId("stopServerBtn"),
+    deviceNameInput: byId("deviceNameInput"),
+    saveDeviceNameBtn: byId("saveDeviceNameBtn"),
+    currentDeviceLabel: byId("currentDeviceLabel"),
+    selectOnlineBtn: byId("selectOnlineBtn"),
+    clearSelectionBtn: byId("clearSelectionBtn"),
+    selectionSummary: byId("selectionSummary"),
+    deviceRetentionSelect: byId("deviceRetentionSelect"),
+    clearOfflineDevicesBtn: byId("clearOfflineDevicesBtn"),
+    groupSelect: byId("groupSelect"),
+    selectGroupBtn: byId("selectGroupBtn"),
+    groupNameInput: byId("groupNameInput"),
+    assignGroupBtn: byId("assignGroupBtn"),
+    clearGroupBtn: byId("clearGroupBtn"),
+    crossToggleBtn: byId("crossToggleBtn"),
+    randomPointsBtn: byId("randomPointsBtn"),
+    exportPngBtn: byId("exportPngBtn"),
+    exportAllPresetsBtn: byId("exportAllPresetsBtn"),
+    exportChoiceDialog: byId("exportChoiceDialog"),
+    exportZipBtn: byId("exportZipBtn"),
+    exportFilesBtn: byId("exportFilesBtn"),
+    cancelExportChoiceBtn: byId("cancelExportChoiceBtn"),
+    videoExportChoiceDialog: byId("videoExportChoiceDialog"),
+    exportVideoZipBtn: byId("exportVideoZipBtn"),
+    exportVideoFilesBtn: byId("exportVideoFilesBtn"),
+    cancelVideoExportChoiceBtn: byId("cancelVideoExportChoiceBtn"),
+    exportWidthInput: byId("exportWidth"),
+    exportHeightInput: byId("exportHeight"),
+    videoDurationInput: byId("videoDuration"),
+    exportVideoBtn: byId("exportVideoBtn"),
+    exportAllVideosBtn: byId("exportAllVideosBtn"),
+    videoProgressWindow: byId("videoProgressWindow"),
+    videoProgressTitle: byId("videoProgressTitle"),
+    videoProgressPercent: byId("videoProgressPercent"),
+    videoProgressBar: byId("videoProgressBar"),
+    videoProgressDetail: byId("videoProgressDetail"),
+    displayNameDialog: byId("displayNameDialog"),
+    displayNameForm: byId("displayNameForm"),
+    displayNameInput: byId("displayNameInput"),
+    presetNameInput: byId("presetNameInput"),
+    savePresetBtn: byId("savePresetBtn"),
+    presetGrid: byId("presets"),
+    mobileCurrentPresetSwatch: byId("mobileCurrentPresetSwatch"),
+    mobileCurrentPresetName: byId("mobileCurrentPresetName"),
+    mobilePresetSheet: byId("mobilePresetSheet"),
+    mobilePresetTarget: byId("mobilePresetTarget"),
+    mobileRecentPresetGroup: byId("mobileRecentPresetGroup"),
+    mobileRecentPresets: byId("mobileRecentPresets"),
+    mobileAllPresets: byId("mobileAllPresets"),
+    mobilePresetCount: byId("mobilePresetCount"),
+    mobilePresetKeepOpen: byId("mobilePresetKeepOpen"),
+    defaultBtn: byId("defaultBtn"),
+    blackoutBtn: byId("blackoutBtn"),
+    copyAddressBtn: byId("copyAddressBtn"),
+    copyControlUrlBtn: byId("copyControlUrlBtn"),
+    openControlUrlBtn: byId("openControlUrlBtn"),
+    localModeBtn: byId("localModeBtn"),
+    displayModeBtn: byId("displayModeBtn"),
+    controlModeBtn: byId("controlModeBtn"),
+    refreshDevicesBtn: byId("refreshDevicesBtn")
+  };
+  dom.controls = {
+    bgColor: byId("bgColor"),
+    bgBrightness: byId("bgBrightness"),
+    crossColor: byId("crossColor"),
+    crossBrightness: byId("crossBrightness"),
+    crossSize: byId("crossSize"),
+    crossThickness: byId("crossThickness"),
+    edgeRatio: byId("edgeRatio"),
+    centerY: byId("centerY"),
+    randomPointCount: byId("randomPointCount")
+  };
+  const outputIds = [
+    "bgBrightness",
+    "crossBrightness",
+    "crossSize",
+    "crossThickness",
+    "edgeRatio",
+    "centerY",
+    "randomPointCount"
+  ];
+  dom.outputs = Object.fromEntries(
+    outputIds.map((id) => [id, byId(`${id}Value`)])
+  );
+
+  const STORAGE_KEYS = Object.freeze({
+    deviceId: "markerdeckDeviceId",
+    sessionId: "markerdeckSessionId",
+    deviceName: "markerdeckDeviceName",
+    presets: "markerdeckPresets",
+    recentPresets: "markerdeckRecentPresets",
+    favoritePresets: "markerdeckFavoritePresets",
+    sessionClaims: "markerdeck-session-claims"
+  });
+  const LEGACY_STORAGE_KEYS = Object.freeze({
+    deviceId: "chromaCrossDeviceId",
+    sessionId: "chromaCrossSessionId",
+    deviceName: "chromaCrossDeviceName",
+    presets: "chromaCrossPresets",
+    recentPresets: "chromaCrossRecentPresets",
+    favoritePresets: "chromaCrossFavoritePresets"
+  });
+
+  function hexToRgb(hex) {
+    const value = hex.replace("#", "");
+    return {
+      r: parseInt(value.slice(0, 2), 16),
+      g: parseInt(value.slice(2, 4), 16),
+      b: parseInt(value.slice(4, 6), 16)
+    };
+  }
+
+  function colorWithBrightness(hex, brightness) {
+    const rgb = hexToRgb(hex);
+    const level = Number(brightness) / 100;
+    return `rgb(${Math.round(rgb.r * level)}, ${Math.round(rgb.g * level)}, ${Math.round(rgb.b * level)})`;
+  }
+
+  function readStorageWithLegacy(storage, key, legacyKey) {
+    const value = storage.getItem(key);
+    if (value !== null) return value;
+    const legacyValue = storage.getItem(legacyKey);
+    if (legacyValue !== null) {
+      try {
+        storage.setItem(key, legacyValue);
+      } catch (_) {}
+      return legacyValue;
+    }
+    return null;
+  }
+
+  function readStoredIdList(key, legacyKey, limit = Infinity) {
+    try {
+      const value = JSON.parse(readStorageWithLegacy(localStorage, key, legacyKey) || "[]");
+      return Array.isArray(value) ? value.map(String).slice(0, limit) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function createRandomId(prefix) {
+    const randomPart = global.crypto?.randomUUID
+      ? global.crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    return `${prefix}-${randomPart}`.slice(0, 80);
+  }
+
+  function getDeviceId() {
+    let id = readStorageWithLegacy(localStorage, STORAGE_KEYS.deviceId, LEGACY_STORAGE_KEYS.deviceId);
+    if (!id) {
+      id = `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      localStorage.setItem(STORAGE_KEYS.deviceId, id);
+    }
+    return id;
+  }
+
+  function createSessionId() {
+    const existing = readStorageWithLegacy(sessionStorage, STORAGE_KEYS.sessionId, LEGACY_STORAGE_KEYS.sessionId);
+    if (existing) return existing;
+    const id = createRandomId("screen");
+    sessionStorage.setItem(STORAGE_KEYS.sessionId, id);
+    return id;
+  }
+
+  function deviceName() {
+    const savedName = readStorageWithLegacy(
+      localStorage,
+      `${STORAGE_KEYS.deviceName}:${state.deviceId}`,
+      `${LEGACY_STORAGE_KEYS.deviceName}:${state.deviceId}`
+    );
+    if (savedName) return savedName;
+    const platform = navigator.platform || "设备";
+    return `${platform} ${state.deviceId.slice(-4)}`;
+  }
+
+  function saveLocalDeviceName(name) {
+    const cleanName = String(name || "").trim().slice(0, 40);
+    if (cleanName) localStorage.setItem(`${STORAGE_KEYS.deviceName}:${state.deviceId}`, cleanName);
+    return cleanName;
+  }
+
+  function requestDisplayName() {
+    dom.displayNameInput.value = deviceName();
+    dom.displayNameDialog.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      dom.displayNameInput.focus();
+      dom.displayNameInput.select();
+    });
+    return new Promise((resolve) => {
+      dom.displayNameForm.onsubmit = (event) => {
+        event.preventDefault();
+        const name = saveLocalDeviceName(dom.displayNameInput.value);
+        if (!name) {
+          dom.displayNameInput.focus();
+          return;
+        }
+        dom.displayNameDialog.classList.add("hidden");
+        resolve(name);
+      };
+    });
+  }
+
+  function androidProvidedDeviceName() {
+    const value = new URLSearchParams(global.location.search).get("androidDeviceName");
+    return value ? String(value).trim().slice(0, 40) : "";
+  }
+
+  function readState() {
+    return {
+      bgColor: dom.controls.bgColor.value,
+      bgBrightness: dom.controls.bgBrightness.value,
+      crossColor: dom.controls.crossColor.value,
+      crossBrightness: dom.controls.crossBrightness.value,
+      crossSize: dom.controls.crossSize.value,
+      crossThickness: dom.controls.crossThickness.value,
+      edgeRatio: dom.controls.edgeRatio.value,
+      centerY: dom.controls.centerY.value,
+      hideCross: document.body.dataset.hideCross || "0",
+      randomPoints: document.body.dataset.randomPoints || "0",
+      randomSeed: document.body.dataset.randomSeed || "",
+      randomPointCount: dom.controls.randomPointCount.value
+    };
+  }
+
+  function currentStateWithFlags() {
+    return {
+      ...readState(),
+      forceLock: state.selectedDeviceState?.forceLock || "0",
+      displayLocked: state.selectedDeviceState?.displayLocked || "0",
+      lockCommand: state.selectedDeviceState?.lockCommand || "none",
+      lockCommandId: state.selectedDeviceState?.lockCommandId || "0",
+      hideCross: state.selectedDeviceState?.hideCross || document.body.dataset.hideCross || "0",
+      randomPoints: state.selectedDeviceState?.randomPoints || document.body.dataset.randomPoints || "0",
+      randomSeed: state.selectedDeviceState?.randomSeed || document.body.dataset.randomSeed || "",
+      randomPointCount: state.selectedDeviceState?.randomPointCount || dom.controls.randomPointCount.value
+    };
+  }
+
+  function setState(next) {
+    state.applyingRemote = true;
+    try {
+      Object.entries(next || {}).forEach(([key, value]) => {
+        if (dom.controls[key] && value !== undefined) dom.controls[key].value = value;
+        if (key === "hideCross" && value !== undefined) {
+          document.body.dataset.hideCross = String(value === "1" || value === 1 || value === true ? "1" : "0");
+        }
+        if (key === "randomPoints" && value !== undefined) {
+          document.body.dataset.randomPoints = String(value === "1" || value === 1 || value === true ? "1" : "0");
+        }
+        if (key === "randomSeed" && value !== undefined) {
+          document.body.dataset.randomSeed = String(value || "");
+        }
+      });
+    } finally {
+      state.applyingRemote = false;
+    }
+  }
+
+  function makeRandomSeed() {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function updateStatus(text) {
+    dom.statusPill.textContent = text;
+  }
+
+  function isTextEditingTarget(target) {
+    return !!target?.closest?.("input, textarea, select, [contenteditable='true']");
+  }
+
+  const state = {
+    presets: [],
+    activePresetId: "",
+    recentPresetIds: readStoredIdList(STORAGE_KEYS.recentPresets, LEGACY_STORAGE_KEYS.recentPresets, 4),
+    favoritePresetIds: new Set(readStoredIdList(STORAGE_KEYS.favoritePresets, LEGACY_STORAGE_KEYS.favoritePresets)),
+    wakeLock: null,
+    locked: false,
+    role: "local",
+    serverMode: global.location.protocol.startsWith("http"),
+    syncTimer: 0,
+    deviceTimer: 0,
+    heartbeatTimer: 0,
+    eventSource: null,
+    applyingRemote: false,
+    selectedDeviceId: "",
+    selectedDeviceIds: new Set(),
+    selectionInitialized: false,
+    lastDevices: [],
+    selectedDeviceInfo: null,
+    selectedDeviceState: null,
+    devicePreviewCanvases: new Map(),
+    deviceCards: new Map(),
+    deviceGroupCards: new Map(),
+    deviceGroupPreviewCanvases: new Map(),
+    expandedDeviceIds: new Set(),
+    deviceRequestInFlight: false,
+    selectedDeviceNameId: "",
+    selectedDeviceNameDraft: "",
+    selectedDeviceNameLocked: false,
+    deviceForceLock: "0",
+    lastLockCommandId: "0",
+    lastGlobalLockCommandId: "0",
+    globalLockBaselineInitialized: false,
+    handledLockCommandIds: new Set(),
+    lockedByRemote: false,
+    cornerTapCount: 0,
+    cornerTimer: 0,
+    deviceId: getDeviceId(),
+    sessionId: createSessionId(),
+    pageInstanceId: createRandomId("page"),
+    sessionClaimChannel: null,
+    sessionConflictResolver: null
+  };
+
+  function initInputGuards() {
+    document.querySelectorAll("img, canvas").forEach((element) => {
+      element.setAttribute("draggable", "false");
+    });
+    ["touchmove", "gesturestart", "gesturechange", "contextmenu", "dragstart", "selectstart", "dblclick"].forEach((eventName) => {
+      document.addEventListener(eventName, (event) => {
+        if (isTextEditingTarget(event.target)) return;
+        if (state.locked || eventName !== "touchmove") event.preventDefault();
+        if (eventName === "dblclick") global.getSelection?.()?.removeAllRanges?.();
+      }, { passive: false });
+    });
+  }
+
+  app.core = {
+    dom,
+    state,
+    STORAGE_KEYS,
+    LEGACY_STORAGE_KEYS,
+    colorWithBrightness,
+    readStorageWithLegacy,
+    readStoredIdList,
+    createRandomId,
+    deviceName,
+    saveLocalDeviceName,
+    requestDisplayName,
+    androidProvidedDeviceName,
+    readState,
+    currentStateWithFlags,
+    setState,
+    makeRandomSeed,
+    updateStatus,
+    isTextEditingTarget,
+    initInputGuards
+  };
+})(window);
