@@ -199,13 +199,15 @@
 
 #### MD-A15 局域网发现提速与启动询问稳定性
 
-状态：首个候选提前验真、短多宿主宽限、同 nonce 单次 UDP 重发、generation/资源清理、启动 trigger 和 pending prompt 补偿已实现；Node/Android 自动化门禁已通过，真实设备时序与不同网络仍待复测。
+状态：首个候选提前验真、短多宿主宽限、同 nonce 单次 UDP 重发、generation/资源清理、启动 trigger 和 pending prompt 补偿已实现；Node/Android 自动化门禁与 USB 真机单宿主验证已通过，多宿主、不同网络/路由器和强制首包丢失待验。
 
 - **性能基线与目标**：原 Node `/api/hosts` 约 `1.805s`，Android 手动发现约 `1.90-1.95s`、询问约 `2.10s`、冷启动列表约 `3.0s`，并曾出现一次发现后未询问。改为首个候选通过 nonce HTTP 验真后立即可见，仅保留 Node `220ms`、Android `240ms` 的多宿主收集宽限。
 - **丢包容忍**：UDP-only 五次本机计时为 `254/227/228/1800/225ms`，完整超时暴露单包偶发丢失。Node 与 Android 在初次请求约 `300ms` 后使用同一 nonce 最多重发一次，仍受原总时限、stop/abort 和 generation 控制；单目标发送失败不终止其他目标。
 - **并发与安全**：mDNS/UDP 候选统一按实例、观测 IPv4 和端口去重，最多四路并发 HTTP 验真。宽限或硬截止会取消未完成验真和发现资源；旧 generation 不得发布宿主、覆盖状态或停止新扫描。私有 IPv4、nonce、self exclusion、观测地址构造 origin 和手动输入边界保持不变。
 - **Android 交互**：`STARTUP` 优先于网络回调，用户刷新优先于后台网络变化。启动结果在 Activity/UI 暂不可用时保持 pending，恢复可交互后补提示；相同宿主每个 Activity 会话只自动提示一次，用户刷新可再次询问。
-- **验收与剩余现场**：`npm run check`、Android `:app:test :app:lintDebug :app:assembleDebug` 和 `git diff --check` 为自动化门禁。仍需真机复测单/多宿主耗时、首包丢失重发、启动网络回调、Activity 暂停/恢复、系统引导/扫码弹窗占用 UI，以及不同路由器和组播隔离。
+- **自动化与 Node 实测**：`npm run check` 为 `44/44` 通过，Android `:app:test :app:lintDebug :app:assembleDebug` 成功。直接 scanner UDP-only 连续 `10` 次为 `223-250ms`。完整 `/api/hosts` 在服务器刚启动后的首轮为 `1839ms`；随后 `20` 次为 `224-277ms`、平均 `228ms`、`0` 次超过 `500ms`，不以稳态均值隐藏首次冷启动异常值。
+- **USB 真机单宿主**：debug APK 已成功安装到 `f2d6d6dc`；冷启动 `5/5` 均在启动后 `1.2s` 检查点出现“发现局域网宿主”，Activity `TotalTime` 为 `569-596ms`。用户刷新后 `0.8s` 内再次弹出；熄屏期间完成扫描后，手动无密码解锁并返回 Activity，pending prompt 正常补弹。
+- **剩余现场**：仍需验证两台以上宿主的 `220/240ms` 收集宽限、不同网络/路由器与组播隔离，并通过受控丢包强制丢弃首个 UDP 请求来确认单次重发的真实恢复路径及 abort 后不发送。
 - **依赖**：MD-A14；沿用其协议、安全边界和 USB 真机结果，详细记录见 `docs/tasks/MD-A15.md`。
 
 ### 5. 关键门禁与共同验收

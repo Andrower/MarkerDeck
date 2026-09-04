@@ -2,7 +2,7 @@
 
 ## 状态
 
-代码、Node 测试、Android JVM 测试、Lint、debug 构建和 diff 检查已完成。新的快速返回、单次 UDP 重发、多宿主宽限、网络回调 generation 隔离和 UI 延后补提示仍需在真实 Android 与不同路由器环境复测。
+代码、Node 测试、Android JVM 测试、Lint、debug 构建和 diff 检查已完成。USB 真机 `f2d6d6dc` 上的单宿主冷启动、用户刷新和熄屏期间 pending prompt 恢复已通过；多宿主、不同网络/路由器和强制首包丢失仍待验证。
 
 ## 基线与根因
 
@@ -45,14 +45,21 @@ JAVA_HOME=... ANDROID_HOME=... ANDROID_SDK_ROOT=... ./gradlew --no-daemon :app:t
 git diff --check
 ```
 
-Node 测试覆盖首个宿主提前完成、宽限内第二台宿主、宽限到期取消未完成验真/发现资源、mDNS/UDP 去重、单目标发送错误隔离、同 nonce 单次重发和 abort 后不再发送。Android 纯逻辑测试覆盖 pending 验真在宽限前不退出、宽限到期退出、`STARTUP` trigger 不被网络回调覆盖、UI 暂不可用后保留 prompt、同会话启动提示去重、用户刷新可再次询问，以及重发只执行一次且 stop/截止后不执行。
+实际结果：Node `npm run check` 共 `44/44` 通过；Android `:app:test :app:lintDebug :app:assembleDebug` 成功。Node 测试覆盖首个宿主提前完成、宽限内第二台宿主、宽限到期取消未完成验真/发现资源、mDNS/UDP 去重、单目标发送错误隔离、同 nonce 单次重发和 abort 后不再发送。Android 纯逻辑测试覆盖 pending 验真在宽限前不退出、宽限到期退出、`STARTUP` trigger 不被网络回调覆盖、UI 暂不可用后保留 prompt、同会话启动提示去重、用户刷新可再次询问，以及重发只执行一次且 stop/截止后不执行。
+
+## 实际单宿主验证
+
+- 直接调用 Node scanner 的 UDP-only 路径连续 `10` 次均为 `223-250ms`。
+- 完整 Node `/api/hosts` 路径在服务器刚启动后的首轮为 `1839ms`；此冷启动异常值明确保留。随后连续 `20` 次为 `224-277ms`，平均 `228ms`，`0` 次超过 `500ms`。
+- debug APK 已成功安装到 USB 真机 `f2d6d6dc`。冷启动 `5/5` 均在启动后 `1.2s` 检查点出现“发现局域网宿主”，Activity `TotalTime` 为 `569-596ms`。
+- 用户主动刷新后，`0.8s` 内再次弹出宿主询问，符合刷新可绕过同 Activity 会话自动提示去重的约束。
+- 熄屏期间扫描完成后，手动进行无密码解锁并返回 Activity，保留的 pending prompt 随即补弹；该结果不涉及或声称绕过系统认证。
 
 ## 剩余真机验证
 
-- 在同一 USB Android 真机重复冷启动、手动刷新和单宿主 UDP-only 计时，确认偶发首包丢失由一次重发收敛，且常见路径较原 `1.8-3.0s` 基线明显提前。
 - 使用至少两台同网宿主确认首台验真后立即可见，第二台在 `220/240ms` 宽限内出现时同批展示，宽限外结果不引发重复提示抖动。
-- 覆盖启动时网络回调、Wi-Fi 切换、Activity 暂停/恢复、锁屏权限引导、扫码/确认弹窗占用 UI，确认 pending `STARTUP` 询问恢复后补弹且同一 Activity 会话仅自动提示一次。
-- 在不同路由器、组播隔离和更多 OEM/Android 版本复测 mDNS/UDP 回退、回调注销、多播锁释放及手动地址兜底。
+- 在不同网络、路由器、组播隔离和更多 OEM/Android 版本复测 mDNS/UDP 回退、网络切换、回调注销、多播锁释放及手动地址兜底。
+- 通过受控丢包强制丢弃首个 UDP 请求，确认约 `300ms` 的同 nonce 单次重发实际触发并恢复结果，且 abort 后不再发送。服务器冷启动首轮 `1839ms` 仍作为未掩盖的现场异常值保留。
 
 ## MD-A14 现场状态
 
