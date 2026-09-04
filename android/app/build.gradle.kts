@@ -11,8 +11,8 @@ android {
         applicationId = "com.andrower.markerdeck"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.5.0"
+        versionCode = 4
+        versionName = "1.6.0"
     }
 
     buildTypes {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.6.0 - 2026-09-04
+
 - 完成 MD-A16 远程锁定与 Android 移动宿主响应优化：共享投放端先同步应用可见 DOM/canvas/native 锁定状态，再立即发送 ACK，Fullscreen、wake lock 和状态发布等慢副作用并行收尾；同一命令的完成态 SSE 不会被较晚返回的 pending POST 快照覆盖。Node 与 Android 保留持久 lock baseline、global/target command ID、去重和 1.5 秒注册 heartbeat/15 秒状态拉取兜底。Android SSE 改用每客户端有界隔离队列，慢客户端超限时断开并重连；同时仅对 `text/event-stream` 禁用 NanoHTTPD 自动 gzip，避免 Chromium 协商 gzip 后小事件滞留在 `GZIPOutputStream`，其他响应压缩行为不变。Node/Android 对 lock ACK 的 devices 刷新使用等价短去抖，ACK 本身仍立即推送。补充带 `Accept-Encoding: gzip` 的真实 HTTP 连续事件、control ACK、慢客户端队列清理、网页快速 ACK 和批量 ACK 合并测试。修复后的 Android LAN Host 已完成 root 覆盖安装与验收：gzip 请求的 SSE 不含 `Content-Encoding` 且 connected 立即返回；单投放页连续锁定/解锁 `20/20` 成功，visible P95 `74ms`、ACK P95 `166ms`，最终确认 `1/1`；同一物理设备双投放页批量锁定/解锁 `10/10` 成功，visible 最大 `106ms`、ACK 最大 `130ms`，最终确认 `2/2`；两个并行 control SSE 均收到 initial 和 completed ACK。慢客户端内存背压已有单元测试覆盖，但未现场灌满 TCP 发送缓冲区。
 - 完成 MD-A15 局域网发现提速与启动询问稳定性：Node/Android 在首个 mDNS/UDP 候选通过 nonce HTTP 验真后提前返回，并保留短暂多宿主宽限；两端使用同一 nonce 在约 300ms 后最多重发一次 UDP 请求，单目标发送失败不再终止整体扫描，abort/截止后不继续发送。Android 稳定保留 `STARTUP` trigger 和暂不可见 UI 的 pending prompt，以 generation 隔离旧扫描并统一释放 mDNS、UDP、HTTP、多播锁和延迟回调；同一 Activity 会话仍只自动提示一次，用户刷新可再次询问。真机性能、多宿主宽限、网络切换及不同路由器仍待复测。
 - 实现 MD-A14 局域网 mDNS 自动发现：Node 使用 bonjour-service 发布 `_markerdeck._tcp.local`，Android 使用 NsdManager 发布/扫描并与 UDP 兼容回退；所有候选继续经过 nonce HTTP 验真，`/api/info` 增加准确的 `mdnsDiscovery` 能力。Android 启动时会在设置页短时发现并先询问连接，支持多宿主选择、设备命名复用、一次会话去重和生命周期清理；便携包与 Electron 包递归携带 bonjour-service 运行时依赖。USB Android 真机上的双向 mDNS、启动询问、命名连接、远程同步和后台发布已通过；不同路由器、网络切换、组播隔离及多宿主现场验证仍待完成。
