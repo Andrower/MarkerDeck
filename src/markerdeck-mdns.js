@@ -171,12 +171,19 @@ function normalizedServiceCandidates(service) {
 
 function createMarkerDeckMdnsBrowser(options = {}) {
   let activeScan = null;
-  const scanTimeoutMs = Number(options.scanTimeoutMs || 1800);
+  const configuredTimeoutMs = Number(options.scanTimeoutMs);
+  const scanTimeoutMs = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs >= 0
+    ? configuredTimeoutMs
+    : 1800;
 
-  async function scanOnce(timeoutMs = scanTimeoutMs) {
+  async function scanOnce(timeoutMs = scanTimeoutMs, scanOptions = {}) {
     if (options.disabled) return [];
     const candidates = new Map();
     let browser = null;
+    const onCandidate = typeof scanOptions.onCandidate === "function"
+      ? scanOptions.onCandidate
+      : null;
+    const signal = scanOptions.signal;
 
     return new Promise((resolve) => {
       let finished = false;
@@ -185,12 +192,26 @@ function createMarkerDeckMdnsBrowser(options = {}) {
         if (finished) return;
         finished = true;
         clearTimeout(timer);
-        try { browser?.stop?.(); } catch (_) {}
-        try { bonjour.destroy?.(); } catch (_) {}
+        const activeBrowser = browser;
+        const activeBonjour = bonjour;
+        browser = null;
+        bonjour = null;
+        try { activeBrowser?.stop?.(); } catch (_) {}
+        try { activeBonjour?.destroy?.(); } catch (_) {}
+        signal?.removeEventListener("abort", finish);
         resolve([...candidates.values()]);
       };
-      const timer = setTimeout(finish, Math.max(1, Number(timeoutMs) || scanTimeoutMs));
+      const requestedTimeoutMs = Number(timeoutMs);
+      const effectiveTimeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs >= 0
+        ? requestedTimeoutMs
+        : scanTimeoutMs;
+      const timer = setTimeout(finish, Math.max(1, effectiveTimeoutMs));
       timer.unref?.();
+      signal?.addEventListener("abort", finish, { once: true });
+      if (signal?.aborted) {
+        finish();
+        return;
+      }
 
       try {
         bonjour = createBonjourInstance({ ...options, onError: finish });
@@ -201,11 +222,13 @@ function createMarkerDeckMdnsBrowser(options = {}) {
         browser = bonjour.find(
           { type: MARKERDECK_MDNS_BONJOUR_TYPE, protocol: MARKERDECK_MDNS_PROTOCOL },
           (service) => {
+            if (finished) return;
             normalizedServiceCandidates(service).forEach((candidate) => {
-              candidates.set(
-                `${candidate.instanceId}|${candidate.address}|${candidate.port}`,
-                candidate
-              );
+              if (finished) return;
+              const key = `${candidate.instanceId}|${candidate.address}|${candidate.port}`;
+              if (candidates.has(key)) return;
+              candidates.set(key, candidate);
+              try { onCandidate?.(candidate); } catch (_) {}
             });
           }
         );
@@ -218,9 +241,9 @@ function createMarkerDeckMdnsBrowser(options = {}) {
   }
 
   return {
-    scan(timeoutMs) {
+    scan(timeoutMs, scanOptions) {
       if (!activeScan) {
-        activeScan = scanOnce(timeoutMs).finally(() => { activeScan = null; });
+        activeScan = scanOnce(timeoutMs, scanOptions).finally(() => { activeScan = null; });
       }
       return activeScan;
     },

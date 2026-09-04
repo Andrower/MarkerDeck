@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- 实现 MD-A14 局域网 mDNS 自动发现：Node 使用 bonjour-service 发布 `_markerdeck._tcp.local`，Android 使用 NsdManager 发布/扫描并与 UDP 兼容回退；所有候选继续经过 nonce HTTP 验真，`/api/info` 增加准确的 `mdnsDiscovery` 能力。Android 启动时会在设置页短时发现并先询问连接，支持多宿主选择、设备命名复用、一次会话去重和生命周期清理；便携包与 Electron 包递归携带 bonjour-service 运行时依赖。真机、跨设备及不同路由器的 mDNS 现场验证仍待完成。
+- 完成 MD-A15 局域网发现提速与启动询问稳定性：Node/Android 在首个 mDNS/UDP 候选通过 nonce HTTP 验真后提前返回，并保留短暂多宿主宽限；两端使用同一 nonce 在约 300ms 后最多重发一次 UDP 请求，单目标发送失败不再终止整体扫描，abort/截止后不继续发送。Android 稳定保留 `STARTUP` trigger 和暂不可见 UI 的 pending prompt，以 generation 隔离旧扫描并统一释放 mDNS、UDP、HTTP、多播锁和延迟回调；同一 Activity 会话仍只自动提示一次，用户刷新可再次询问。真机性能、多宿主宽限、网络切换及不同路由器仍待复测。
+- 实现 MD-A14 局域网 mDNS 自动发现：Node 使用 bonjour-service 发布 `_markerdeck._tcp.local`，Android 使用 NsdManager 发布/扫描并与 UDP 兼容回退；所有候选继续经过 nonce HTTP 验真，`/api/info` 增加准确的 `mdnsDiscovery` 能力。Android 启动时会在设置页短时发现并先询问连接，支持多宿主选择、设备命名复用、一次会话去重和生命周期清理；便携包与 Electron 包递归携带 bonjour-service 运行时依赖。USB Android 真机上的双向 mDNS、启动询问、命名连接、远程同步和后台发布已通过；不同路由器、网络切换、组播隔离及多宿主现场验证仍待完成。
 - 整理 MD-A12 仓库主页与发布入口：以实际使用者为中心重写 README，补充四个平台下载说明、能力矩阵、网络与锁定边界、文档索引和任务记录。
 
 ## 1.5.0 - 2026-09-03

@@ -187,7 +187,7 @@
 
 #### MD-A14 局域网 mDNS 自动发现与启动连接询问
 
-状态：代码、Node/Android 纯逻辑与组合测试、Lint、debug 构建、打包结构检查和文档已完成；真实 Android、跨设备 mDNS 和不同路由器现场验收待完成。
+状态：代码、Node/Android 纯逻辑与组合测试、Lint、debug 构建、打包结构检查和文档已完成；USB Android 真机上的 Node/Android 双向 mDNS、启动询问、命名连接、远程同步和后台发布已通过，不同路由器、网络切换、组播隔离及多宿主现场验收待完成。
 
 - **发现协议**：在现有 UDP `8766` 广播/组播和手动地址回退之上增加 DNS-SD `_markerdeck._tcp.local`。Node 使用 bonjour-service，Android 使用系统 `NsdManager`。发布 TXT 至少包含 `service=markerdeck`、`protocolVersion=1`、`instanceId`；`/api/info` 同时准确报告 `mdnsDiscovery` 与 `udpDiscovery`。
 - **信任边界**：Node `/api/hosts` 与 Android 设置扫描同时采集 mDNS/UDP，按实例和观测地址去重，只接受安全文本、版本、实例 ID、合法端口以及私有/回环 IPv4，排除自身。广播名称、URL 和 TXT 不直接可信，最终必须通过观测地址的 nonce `/api/discovery` HTTP 验真；mDNS 出错时回退 UDP/手动输入。
@@ -196,6 +196,17 @@
 - **发布物**：macOS/Windows 服务 ZIP 与 Electron 包递归携带 bonjour-service 生产依赖，CI 在打包前执行 `npm ci`，静态检查确认资源结构；Android 不包含 Node.js/FFmpeg。
 - **验收**：Node `npm run check`、Android `:app:test :app:lintDebug :app:assembleDebug`、`git diff --check` 和便携包结构检查均纳入本地/CI 门禁。真机、跨设备 mDNS 和不同路由器行为仍必须单独记录，不写成自动化测试已通过。
 - **依赖**：MD-A08、MD-A09、MD-A10；需真实 Android 设备、至少两台同网宿主/被控端和可观察 mDNS 的不同路由器环境。
+
+#### MD-A15 局域网发现提速与启动询问稳定性
+
+状态：首个候选提前验真、短多宿主宽限、同 nonce 单次 UDP 重发、generation/资源清理、启动 trigger 和 pending prompt 补偿已实现；Node/Android 自动化门禁已通过，真实设备时序与不同网络仍待复测。
+
+- **性能基线与目标**：原 Node `/api/hosts` 约 `1.805s`，Android 手动发现约 `1.90-1.95s`、询问约 `2.10s`、冷启动列表约 `3.0s`，并曾出现一次发现后未询问。改为首个候选通过 nonce HTTP 验真后立即可见，仅保留 Node `220ms`、Android `240ms` 的多宿主收集宽限。
+- **丢包容忍**：UDP-only 五次本机计时为 `254/227/228/1800/225ms`，完整超时暴露单包偶发丢失。Node 与 Android 在初次请求约 `300ms` 后使用同一 nonce 最多重发一次，仍受原总时限、stop/abort 和 generation 控制；单目标发送失败不终止其他目标。
+- **并发与安全**：mDNS/UDP 候选统一按实例、观测 IPv4 和端口去重，最多四路并发 HTTP 验真。宽限或硬截止会取消未完成验真和发现资源；旧 generation 不得发布宿主、覆盖状态或停止新扫描。私有 IPv4、nonce、self exclusion、观测地址构造 origin 和手动输入边界保持不变。
+- **Android 交互**：`STARTUP` 优先于网络回调，用户刷新优先于后台网络变化。启动结果在 Activity/UI 暂不可用时保持 pending，恢复可交互后补提示；相同宿主每个 Activity 会话只自动提示一次，用户刷新可再次询问。
+- **验收与剩余现场**：`npm run check`、Android `:app:test :app:lintDebug :app:assembleDebug` 和 `git diff --check` 为自动化门禁。仍需真机复测单/多宿主耗时、首包丢失重发、启动网络回调、Activity 暂停/恢复、系统引导/扫码弹窗占用 UI，以及不同路由器和组播隔离。
+- **依赖**：MD-A14；沿用其协议、安全边界和 USB 真机结果，详细记录见 `docs/tasks/MD-A15.md`。
 
 ### 5. 关键门禁与共同验收
 
@@ -236,7 +247,7 @@ MarkerDeck/
 - **M2 普通投放可靠性**：MD-A06 完成普通投放的设备/API 支持矩阵、20 次灭屏/亮屏、弱网和 WebView 异常记录。
 - **M3 可发布 APK**：MD-A07 生成签名 APK、校验值和 GitHub Release 产物；未验证的 Android API/OEM 不写入支持声明。
 
-建议依赖顺序为 `MD-A01 -> MD-A02 -> MD-A03 -> MD-A08 -> MD-A09 -> MD-A10 -> MD-A11 -> MD-A14 -> MD-A06 -> MD-A07`；MD-A09 作为 Android 宿主纵切并行维护，MD-A10/MD-A11/MD-A14 不改变普通投放和兼容性门禁。
+建议依赖顺序为 `MD-A01 -> MD-A02 -> MD-A03 -> MD-A08 -> MD-A09 -> MD-A10 -> MD-A11 -> MD-A14 -> MD-A15 -> MD-A06 -> MD-A07`；MD-A09 作为 Android 宿主纵切并行维护，MD-A10/MD-A11/MD-A14/MD-A15 不改变普通投放和兼容性门禁。
 
 浏览器/PWA 不作为满足强前台的实现。
 

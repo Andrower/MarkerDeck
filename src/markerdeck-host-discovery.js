@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const dgram = require("node:dgram");
 const os = require("node:os");
+const { performance } = require("node:perf_hooks");
 const {
   MARKERDECK_MDNS_SERVICE_TYPE,
   createMarkerDeckMdnsBrowser
@@ -15,6 +16,15 @@ const DISCOVERY_MAX_PACKET_SIZE = 4096;
 const DISCOVERY_MAX_HOSTS = 32;
 const DISCOVERY_HTTP_BODY_LIMIT = 16 * 1024;
 const DISCOVERY_MDNS_TIMEOUT_MS = 1400;
+const DISCOVERY_MULTI_HOST_GRACE_MS = 220;
+const DISCOVERY_UDP_RETRY_DELAY_MS = 300;
+const DISCOVERY_HTTP_VERIFY_TIMEOUT_MS = 900;
+const DISCOVERY_MAX_HTTP_VERIFICATIONS = 4;
+
+function nonNegativeNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
 
 function isAllowedDiscoveryIpv4(value) {
   const octets = String(value || "").trim().split(".");
@@ -132,9 +142,12 @@ function interfaceBroadcastAddresses() {
   return [...addresses];
 }
 
-async function verifyCandidate(candidate, nonce, sourceAddress, selfInstanceId, fetchImpl) {
+async function verifyCandidate(candidate, nonce, sourceAddress, selfInstanceId, fetchImpl, signal) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 900);
+  const abort = () => controller.abort();
+  if (signal?.aborted) return null;
+  signal?.addEventListener("abort", abort, { once: true });
+  const timeout = setTimeout(() => controller.abort(), DISCOVERY_HTTP_VERIFY_TIMEOUT_MS);
   timeout.unref?.();
   try {
     const response = await fetchImpl(
@@ -160,10 +173,20 @@ async function verifyCandidate(candidate, nonce, sourceAddress, selfInstanceId, 
     return null;
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
 }
 
-function scanUdpCandidates({ discoveryPort, configuredTargets, scanTimeoutMs, selfInstanceId, nonce: requestedNonce }) {
+function scanUdpCandidates({
+  discoveryPort,
+  configuredTargets,
+  scanTimeoutMs,
+  selfInstanceId,
+  nonce: requestedNonce,
+  onCandidate,
+  signal,
+  socketFactory
+}) {
   const nonce = requestedNonce || crypto.randomBytes(18).toString("base64url");
   const request = Buffer.from(JSON.stringify({
     service: DISCOVERY_SERVICE,
@@ -174,26 +197,41 @@ function scanUdpCandidates({ discoveryPort, configuredTargets, scanTimeoutMs, se
   const candidates = new Map();
   let socket;
   try {
-    socket = dgram.createSocket("udp4");
+    socket = typeof socketFactory === "function"
+      ? socketFactory()
+      : dgram.createSocket("udp4");
   } catch (_) {
     return Promise.resolve({ nonce, candidates: [] });
   }
 
   return new Promise((resolve) => {
     let finished = false;
+    let retryTimer = null;
     const finish = () => {
       if (finished) return;
       finished = true;
       clearTimeout(scanTimer);
+      if (retryTimer) clearTimeout(retryTimer);
+      signal?.removeEventListener("abort", finish);
+      try {
+        socket.removeAllListeners("message");
+        socket.removeAllListeners("error");
+      } catch (_) {}
       try { socket.close(); } catch (_) {}
       resolve({ nonce, candidates: [...candidates.values()] });
     };
     const scanTimer = setTimeout(finish, scanTimeoutMs);
     scanTimer.unref?.();
+    signal?.addEventListener("abort", finish, { once: true });
+    if (signal?.aborted) {
+      finish();
+      return;
+    }
 
     socket.on("message", (message, remote) => {
-      if (message.length > DISCOVERY_MAX_PACKET_SIZE || remote.family !== "IPv4") return;
-      const sourceAddress = remote.address.replace(/^::ffff:/, "");
+      if (finished || !remote || message.length > DISCOVERY_MAX_PACKET_SIZE ||
+          remote.family !== "IPv4") return;
+      const sourceAddress = remote.address.replace(/^::ffff:/i, "");
       const candidate = validateAdvertisement(
         parseAdvertisement(message),
         nonce,
@@ -201,20 +239,38 @@ function scanUdpCandidates({ discoveryPort, configuredTargets, scanTimeoutMs, se
         selfInstanceId
       );
       if (!candidate) return;
-      candidates.set(`${candidate.instanceId}|${sourceAddress}|${candidate.port}`, {
+      const entry = {
         candidate,
         sourceAddress,
         source: "udp"
-      });
+      };
+      const key = `${candidate.instanceId}|${sourceAddress}|${candidate.port}`;
+      if (candidates.has(key)) return;
+      candidates.set(key, entry);
+      try { onCandidate?.(entry); } catch (_) {}
     });
     socket.on("error", finish);
     try {
       socket.bind(0, "0.0.0.0", () => {
+        if (finished) return;
         try { socket.setBroadcast(true); } catch (_) {}
-        const targets = configuredTargets.length ? configuredTargets : interfaceBroadcastAddresses();
-        targets.forEach((target) => {
-          socket.send(request, discoveryPort, target, () => {});
-        });
+        const sendToTargets = () => {
+          if (finished || signal?.aborted) return;
+          const targets = configuredTargets.length ? configuredTargets : interfaceBroadcastAddresses();
+          targets.forEach((target) => {
+            if (finished || signal?.aborted) return;
+            try {
+              socket.send(request, discoveryPort, target, () => {});
+            } catch (_) {
+              // An unavailable broadcast target must not cancel other targets or the receive window.
+            }
+          });
+        };
+        sendToTargets();
+        if (!finished && !signal?.aborted) {
+          retryTimer = setTimeout(sendToTargets, DISCOVERY_UDP_RETRY_DELAY_MS);
+          retryTimer.unref?.();
+        }
       });
     } catch (_) {
       finish();
@@ -234,14 +290,22 @@ function mdnsCandidateEntries(candidates, selfInstanceId) {
 }
 
 function createMarkerDeckHostScanner(options = {}) {
-  const discoveryPort = Number(options.discoveryPort || 8766);
+  const discoveryPort = Number(options.discoveryPort ?? 8766);
   const selfInstanceId = String(options.selfInstanceId || "");
-  const scanTimeoutMs = Number(options.scanTimeoutMs || 1800);
+  const scanTimeoutMs = nonNegativeNumber(options.scanTimeoutMs, 1800);
+  const mdnsScanTimeoutMs = nonNegativeNumber(
+    options.mdnsScanTimeoutMs,
+    DISCOVERY_MDNS_TIMEOUT_MS
+  );
+  const multiHostGraceMs = nonNegativeNumber(
+    options.multiHostGraceMs,
+    DISCOVERY_MULTI_HOST_GRACE_MS
+  );
   const fetchImpl = options.fetchImpl || fetch;
   const configuredTargets = Array.isArray(options.targets) ? options.targets.filter(Boolean) : [];
   const udpScanner = options.udpScanner || scanUdpCandidates;
   const mdnsBrowser = options.mdnsBrowser || createMarkerDeckMdnsBrowser({
-    scanTimeoutMs: Number(options.mdnsScanTimeoutMs || DISCOVERY_MDNS_TIMEOUT_MS),
+    scanTimeoutMs: mdnsScanTimeoutMs,
     bonjourFactory: options.bonjourFactory,
     disabled: options.mdnsDisabled
   });
@@ -250,58 +314,185 @@ function createMarkerDeckHostScanner(options = {}) {
   async function scanOnce() {
     if (!Number.isInteger(discoveryPort) || discoveryPort < 1 || discoveryPort > 65535) return [];
     const scanNonce = crypto.randomBytes(18).toString("base64url");
+    const abortController = new AbortController();
+    const candidates = new Map();
+    const verified = new Map();
+    const verificationQueue = [];
+    const verificationInFlight = new Set();
+    let udpComplete = false;
+    let mdnsComplete = false;
+    let pendingVerifications = 0;
+    let firstVerifiedAt = null;
+    let graceTimer = null;
+    let hardTimer = null;
+    let settled = false;
+    let resolveScan;
+
+    const sortedHosts = () => [...verified.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, "zh-CN") || a.serviceAddress.localeCompare(b.serviceAddress)
+    );
+    const result = new Promise((resolve) => { resolveScan = resolve; });
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (graceTimer) clearTimeout(graceTimer);
+      if (hardTimer) clearTimeout(hardTimer);
+      abortController.abort();
+      resolveScan(sortedHosts());
+    };
+    const maybeFinish = () => {
+      if (settled) return;
+      const sourcesComplete = udpComplete && mdnsComplete;
+      const graceElapsed = firstVerifiedAt != null &&
+        performance.now() >= firstVerifiedAt + multiHostGraceMs;
+      if ((sourcesComplete && pendingVerifications === 0) || graceElapsed) finish();
+    };
+    const normalizeCandidateEntry = (entry) => {
+      const rawCandidate = entry?.candidate;
+      const sourceAddress = String(entry?.sourceAddress || "")
+        .replace(/^::ffff:/i, "")
+        .trim();
+      if (!rawCandidate || !sourceAddress) return null;
+      const candidate = validateAdvertisement(
+        {
+          service: DISCOVERY_SERVICE,
+          protocolVersion: DISCOVERY_PROTOCOL_VERSION,
+          type: DISCOVERY_RESPONSE_TYPE,
+          nonce: scanNonce,
+          name: rawCandidate.name,
+          port: rawCandidate.port,
+          httpUrl: `http://${sourceAddress}:${rawCandidate.port}`,
+          instanceId: rawCandidate.instanceId
+        },
+        scanNonce,
+        sourceAddress,
+        selfInstanceId
+      );
+      return candidate ? {
+        candidate,
+        sourceAddress,
+        source: entry?.source
+      } : null;
+    };
+    const startQueuedVerifications = () => {
+      while (!settled && verificationInFlight.size < DISCOVERY_MAX_HTTP_VERIFICATIONS &&
+          verificationQueue.length > 0) {
+        const { key, entry } = verificationQueue.shift();
+        verificationInFlight.add(key);
+        Promise.resolve()
+          .then(() => verifyCandidate(
+            entry.candidate,
+            scanNonce,
+            entry.sourceAddress,
+            selfInstanceId,
+            fetchImpl,
+            abortController.signal
+          ))
+          .then((host) => {
+            if (!host || settled) return;
+            verified.set(`${host.instanceId}|${host.serviceAddress}`, host);
+            if (firstVerifiedAt == null) {
+              firstVerifiedAt = performance.now();
+              graceTimer = setTimeout(maybeFinish, multiHostGraceMs);
+              graceTimer.unref?.();
+            }
+          })
+          .catch(() => null)
+          .finally(() => {
+            verificationInFlight.delete(key);
+            pendingVerifications -= 1;
+            startQueuedVerifications();
+            maybeFinish();
+          });
+      }
+    };
+    const addCandidate = (entry) => {
+      if (settled) return;
+      const normalized = normalizeCandidateEntry(entry);
+      if (!normalized) return;
+      const { candidate, sourceAddress } = normalized;
+      const key = `${candidate.instanceId}|${sourceAddress}|${candidate.port}`;
+      if (candidates.has(key) || candidates.size >= DISCOVERY_MAX_HOSTS) return;
+      candidates.set(key, normalized);
+      pendingVerifications += 1;
+      verificationQueue.push({ key, entry: normalized });
+      startQueuedVerifications();
+    };
+
+    hardTimer = setTimeout(
+      finish,
+      Math.max(1, scanTimeoutMs + DISCOVERY_HTTP_VERIFY_TIMEOUT_MS)
+    );
+    hardTimer.unref?.();
+
     const udpScan = Promise.resolve().then(() => udpScanner({
       discoveryPort,
       configuredTargets,
       scanTimeoutMs,
       selfInstanceId,
-      nonce: scanNonce
-    })).then((result) => ({
       nonce: scanNonce,
-      candidates: Array.isArray(result?.candidates) ? result.candidates : []
-    })).catch(() => ({ nonce: scanNonce, candidates: [] }));
+      onCandidate: addCandidate,
+      signal: abortController.signal
+    })).then((scanResult) => {
+      const udpCandidates = Array.isArray(scanResult?.candidates) ? scanResult.candidates : [];
+      udpCandidates.forEach(addCandidate);
+      udpComplete = true;
+      maybeFinish();
+    }).catch(() => {
+      udpComplete = true;
+      maybeFinish();
+    });
     let mdnsScan;
     try {
       mdnsScan = Promise.resolve(mdnsBrowser?.scan?.(
-        Number(options.mdnsScanTimeoutMs || DISCOVERY_MDNS_TIMEOUT_MS)
+        mdnsScanTimeoutMs,
+        {
+          signal: abortController.signal,
+          onCandidate: (rawCandidate) => {
+            const normalized = validateMdnsCandidate(rawCandidate, selfInstanceId);
+            if (!normalized) return;
+            addCandidate({
+              candidate: {
+                ...normalized,
+                type: DISCOVERY_RESPONSE_TYPE,
+                nonce: scanNonce,
+                httpUrl: `http://${normalized.sourceAddress}:${normalized.port}`
+              },
+              sourceAddress: normalized.sourceAddress,
+              source: "mdns"
+            });
+          }
+        }
       ) || []);
     } catch (_) {
       mdnsScan = Promise.resolve([]);
     }
-    mdnsScan = mdnsScan.catch(() => []);
-    const [{ nonce, candidates: udpCandidates }, mdnsCandidates] = await Promise.all([
-      udpScan,
-      mdnsScan
-    ]);
-    const candidates = new Map();
-    udpCandidates.forEach((entry) => {
-      const candidate = entry?.candidate;
-      if (!candidate || typeof entry?.sourceAddress !== "string") return;
-      candidates.set(`${candidate.instanceId}|${entry.sourceAddress}|${candidate.port}`, entry);
+    mdnsScan.then((rawCandidates) => {
+      mdnsCandidateEntries(Array.isArray(rawCandidates) ? rawCandidates : [], selfInstanceId)
+        .forEach((entry) => {
+          const candidate = entry.candidate;
+          addCandidate({
+            ...entry,
+            candidate: {
+              ...candidate,
+              type: DISCOVERY_RESPONSE_TYPE,
+              nonce: scanNonce,
+              httpUrl: `http://${entry.sourceAddress}:${candidate.port}`
+            }
+          });
+        });
+      mdnsComplete = true;
+      maybeFinish();
+    }).catch(() => {
+      mdnsComplete = true;
+      maybeFinish();
     });
-    mdnsCandidateEntries(Array.isArray(mdnsCandidates) ? mdnsCandidates : [], selfInstanceId).forEach((entry) => {
-      entry.candidate = {
-        ...entry.candidate,
-        type: DISCOVERY_RESPONSE_TYPE,
-        nonce,
-        httpUrl: `http://${entry.sourceAddress}:${entry.candidate.port}`
-      };
-      candidates.set(`${entry.candidate.instanceId}|${entry.sourceAddress}|${entry.candidate.port}`, entry);
-    });
-    const verified = await Promise.all(
-      [...candidates.values()].slice(0, DISCOVERY_MAX_HOSTS).map(({ candidate, sourceAddress }) => {
-        if (candidate.instanceId === selfInstanceId) return null;
-        return verifyCandidate(candidate, nonce, sourceAddress, selfInstanceId, fetchImpl);
-      })
-    );
-    const merged = new Map();
-    verified.filter(Boolean).forEach((host) => {
-      const key = `${host.instanceId}|${host.serviceAddress}`;
-      merged.set(key, host);
-    });
-    return [...merged.values()].sort((a, b) =>
-      a.name.localeCompare(b.name, "zh-CN") || a.serviceAddress.localeCompare(b.serviceAddress)
-    );
+
+    // Keep the source promises observed for errors, but resolve from the first verified host
+    // after the short collection grace instead of waiting for both fixed discovery timers.
+    void udpScan;
+    void mdnsScan;
+    return result;
   }
 
   return {
@@ -317,6 +508,7 @@ function createMarkerDeckHostScanner(options = {}) {
 module.exports = {
   createMarkerDeckHostScanner,
   isAllowedDiscoveryIpv4,
+  scanUdpCandidates,
   validateAdvertisement,
   validateMdnsCandidate
 };
