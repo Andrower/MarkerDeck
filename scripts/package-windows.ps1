@@ -17,6 +17,13 @@ $archive = Join-Path $ArtifactDirectory "$packageName.zip"
 try {
   New-Item -ItemType Directory -Force (Join-Path $packageDirectory "app"), (Join-Path $packageDirectory "runtime\node-windows"), $ArtifactDirectory | Out-Null
   Copy-Item -Path (Join-Path $root "src\*") -Destination (Join-Path $packageDirectory "app") -Recurse -Force
+  $bonjourPackage = Join-Path $root "node_modules\bonjour-service\package.json"
+  if (-not (Test-Path $bonjourPackage -PathType Leaf)) {
+    throw "bonjour-service is missing. Run npm ci --omit=dev before packaging."
+  }
+  $portableNodeModules = Join-Path $packageDirectory "app\node_modules"
+  New-Item -ItemType Directory -Force $portableNodeModules | Out-Null
+  Copy-Item -Path (Join-Path $root "node_modules\*") -Destination $portableNodeModules -Recurse -Force
   Copy-Item -Path (Join-Path $root "platform\windows\start-markerdeck-server.bat") -Destination $packageDirectory -Force
   Copy-Item -Path (Join-Path $root "docs\windows.md") -Destination (Join-Path $packageDirectory "README.md") -Force
 

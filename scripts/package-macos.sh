@@ -16,6 +16,11 @@ trap cleanup EXIT
 
 mkdir -p "$PACKAGE_DIR/app" "$PACKAGE_DIR/runtime/node-macos" "$ARTIFACT_DIR"
 /usr/bin/ditto "$ROOT/src" "$PACKAGE_DIR/app"
+if [ ! -f "$ROOT/node_modules/bonjour-service/package.json" ]; then
+  echo "bonjour-service is missing. Run npm ci --omit=dev before packaging."
+  exit 1
+fi
+/usr/bin/ditto "$ROOT/node_modules" "$PACKAGE_DIR/app/node_modules"
 /usr/bin/ditto "$ROOT/platform/macos/start-markerdeck-server.command" "$PACKAGE_DIR/start-markerdeck-server.command"
 /usr/bin/ditto "$ROOT/docs/macos.md" "$PACKAGE_DIR/README.md"
 

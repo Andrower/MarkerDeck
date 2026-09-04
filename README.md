@@ -38,7 +38,7 @@ MarkerDeck 适合需要让多台手机、平板或电脑同步显示纯色背景
 1. 下载对应平台的 ZIP 或 Android APK；Windows 桌面 ZIP 必须完整解压。
 2. 启动服务：Windows 浏览器包运行 `start-markerdeck-server.bat`，macOS 运行 `start-markerdeck-server.command`；桌面客户端直接运行 `MarkerDeck.exe`。
 3. 在电脑打开 `http://localhost:8765/markerdeck-launch.html`，或使用启动页显示的局域网地址。
-4. 让手机、平板或另一台电脑连接同一局域网或手机热点，打开启动页地址，选择“作为投放端”。
+4. 让手机、平板或另一台电脑连接同一局域网或手机热点，打开启动页地址；Android 默认启动会短暂扫描并询问是否连接发现的宿主，拒绝后仍可在模式页手动选择“作为投放端”。
 5. 回到控制端选择设备，调整画面、应用预设或锁定投放。
 
 手机和平板必须使用启动页显示的局域网地址，不能把 `localhost` 或 `127.0.0.1` 作为远程设备地址。端口被占用时，macOS 启动脚本会选择后续可用端口；防火墙需要允许服务使用 HTTP 端口和 UDP `8766`。
@@ -56,7 +56,7 @@ MarkerDeck 适合需要让多台手机、平板或电脑同步显示纯色背景
 | 能力 | Windows 桌面客户端 | Windows 浏览器服务端 | macOS ARM64 | Android APK |
 | --- | --- | --- | --- | --- |
 | 控制端与投放端 | 支持 | 支持 | 支持 | 支持 |
-| 局域网发现 | 支持 | 支持 | 支持 | 作为宿主时支持 |
+| 局域网发现 | mDNS + UDP | mDNS + UDP | mDNS + UDP | mDNS + UDP；作为宿主时发布 |
 | PNG 导出 | 支持 | 支持 | 支持 | 宿主控制页支持 |
 | MP4 导出 | 支持，内置 FFmpeg | 支持，内置 FFmpeg | 支持，按本机 FFmpeg 可用性 | 不支持 |
 | 桌面全屏、置顶和按键拦截 | 支持 | 由浏览器决定 | 由浏览器决定 | 使用 Android 投放窗口 |
@@ -65,7 +65,7 @@ MarkerDeck 适合需要让多台手机、平板或电脑同步显示纯色背景
 ## 网络与锁定边界
 
 - 控制服务默认只在本机和当前局域网中运行；设备状态、控制指令和预设不需要上传到第三方云服务。不要把服务端口直接暴露到公网。
-- 局域网发现使用 UDP `8766`，发现到的地址还会通过 nonce 作用域的 HTTP 握手验证。电脑与投放设备应连接同一个局域网或手机热点。
+- 局域网发现同时使用 DNS-SD `_markerdeck._tcp.local` 和 UDP `8766`；发现到的地址还会通过观测地址上的 nonce 作用域 HTTP 握手验证。电脑与投放设备应连接同一个局域网或手机热点。路由器可能隔离 mDNS，UDP 与手动地址仍是回退路径。
 - `localhost` 只表示当前设备。手机连接电脑服务时，应使用启动页给出的局域网 IP 或二维码地址，不能使用电脑上的 `localhost`。
 - 网页和桌面客户端可以拦截常见的退出、刷新、返回和全屏快捷键，但普通应用无法完全拦截操作系统保留按键。
 - Windows 键、`Ctrl + Alt + Delete`、电源键等系统级操作不能由普通网页或应用完全禁用；严格封闭的拍摄设备需要配合 Windows Assigned Access、组策略或系统级 kiosk 模式。
@@ -102,6 +102,7 @@ cd android
 - [Android 开发与构建](android/README.md)
 - [改进路线](docs/improvement-roadmap.md)
 - [任务记录索引](docs/tasks/README.md)
+- [MD-A14 局域网 mDNS 自动发现](docs/tasks/MD-A14.md)
 
 ## 许可
 

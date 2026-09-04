@@ -181,6 +181,7 @@ before(async () => {
       MARKERDECK_DISCOVERY_PORT: String(discoveryPort),
       MARKERDECK_HOST_SCAN_PORT: String(hostScanPort),
       MARKERDECK_HOST_SCAN_TARGETS: "127.0.0.1",
+      MARKERDECK_MDNS_DISABLED: "1",
       MARKERDECK_DATA_DIR: dataDirectory
     },
     stdio: ["ignore", "pipe", "pipe"]
@@ -273,6 +274,8 @@ test("returns server information and QR code", async () => {
   assert.equal(body.port, port);
   assert.match(body.url, /markerdeck-launch\.html$/);
   assert.equal(body.capabilities.hostDiscovery, true);
+  assert.equal(body.capabilities.udpDiscovery, true);
+  assert.equal(body.capabilities.mdnsDiscovery, false);
 
   const qr = await fetch(`${origin}/qr.svg?text=${encodeURIComponent(body.url)}`);
   assert.equal(qr.status, 200);

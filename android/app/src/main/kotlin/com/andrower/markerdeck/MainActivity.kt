@@ -19,6 +19,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
+import android.text.InputFilter
+import android.text.InputType
 import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.Gravity
@@ -49,10 +51,12 @@ import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -142,6 +146,15 @@ class MainActivity : ComponentActivity() {
     private var lockScreenPermissionGuideHandled = false
     private var lockScreenPermissionGuideShownThisActivity = false
     private var qrScanInFlight = false
+    private var savedSettingsSnapshot = MarkerDeckSettings()
+    private var qrConnectionFlow = QrConnectionFlowState()
+    private var qrHostInfoJob: Job? = null
+    private var qrHostConfirmationDialog: AlertDialog? = null
+    private var qrDeviceNameDialog: AlertDialog? = null
+    private var autoDiscoveryPromptDialog: AlertDialog? = null
+    private var lockScreenPermissionGuideDialog: AlertDialog? = null
+    private var pendingAutoDiscovery: Pair<List<DiscoveryHost>, DiscoveryScanTrigger>? = null
+    private val promptedAutoDiscoveryIdentities = mutableSetOf<String>()
 
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -183,6 +196,7 @@ class MainActivity : ComponentActivity() {
         discoveryScanner = MarkerDeckDiscoveryScanner(
             context = this,
             scope = activityScope,
+            selfInstanceIdProvider = { hostLifecycleController.currentSession()?.instanceId.orEmpty() },
             listener = object : MarkerDeckDiscoveryScanner.Listener {
                 override fun onScanStarted() {
                     discoveryUiState = mergeDiscoveryUiState(
@@ -203,13 +217,15 @@ class MainActivity : ComponentActivity() {
                 }
 
                 override fun onScanFinished(status: DiscoveryScanStatus, message: String) {
-                    discoveryUiState = mergeDiscoveryUiState(
-                        current = discoveryUiState,
-                        status = status,
-                        message = message
-                    )
-                    renderDiscoveryUi()
-                    maybeAutoFillDiscoveredHost()
+                    onDiscoveryScanFinished(status, message, DiscoveryScanTrigger.NETWORK)
+                }
+
+                override fun onScanFinishedWithTrigger(
+                    status: DiscoveryScanStatus,
+                    message: String,
+                    trigger: DiscoveryScanTrigger
+                ) {
+                    onDiscoveryScanFinished(status, message, trigger)
                 }
             }
         )
@@ -635,20 +651,9 @@ class MainActivity : ComponentActivity() {
                     showQrScanStatus(QrScanUiStatus.FAILED)
                     return
                 }
-                applyingSettingsDraft = true
-                try {
-                    serviceAddressInput.setText(address)
-                    serviceAddressInput.setSelection(address.length)
-                } finally {
-                    applyingSettingsDraft = false
-                }
-                settingsDraft = updateSettingsDraft(
-                    settingsDraft,
-                    SettingsField.SERVICE_ADDRESS,
-                    address
-                )
                 serviceAddressInput.error = null
                 showQrScanStatus(QrScanUiStatus.SUCCESS, address)
+                showQrHostConfirmation(address)
             }
 
             QrHostScanResultKind.CANCELLED ->
@@ -838,13 +843,13 @@ class MainActivity : ComponentActivity() {
     private fun observeSettings() {
         activityScope.launch {
             val saved = settingsRepository.settings.first()
+            savedSettingsSnapshot = saved
             lockScreenPermissionGuideHandled =
                 settingsRepository.lockScreenPermissionGuideHandled.first()
             lockScreenPermissionGuideStateLoaded = true
             settingsDraft = hydrateSettingsDraft(settingsDraft, saved)
             settingsHydrated = true
             if (!displayActive) applySettingsDraftToViews()
-            maybeAutoFillDiscoveredHost()
             if (settingsStatusOverride != null) {
                 settingsStatus.text = settingsStatusOverride
                 settingsStatus.setTextColor(getColor(R.color.markerdeck_error))
@@ -855,6 +860,7 @@ class MainActivity : ComponentActivity() {
                 settingsStatus.setText(R.string.settings_restored_status)
             }
             maybeShowLockScreenPermissionGuide()
+            maybeShowAutoDiscoveryPrompt()
         }
     }
 
@@ -905,47 +911,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun maybeAutoFillDiscoveredHost() {
-        if (!settingsHydrated || discoveryUiState.status != DiscoveryScanStatus.FOUND) return
-        if (discoveryUiState.hosts.size != 1) return
-        if (SettingsField.SERVICE_ADDRESS in settingsDraft.editedFields) return
-        if (serviceAddressInput.text.toString().trim().isNotEmpty()) return
-        val host = discoveryUiState.hosts.single()
-        val normalizedAddress = try {
-            normalizeServiceAddress(host.serviceAddress)
-        } catch (_: IllegalArgumentException) {
-            return
-        }
-        applyingSettingsDraft = true
-        try {
-            serviceAddressInput.setText(normalizedAddress)
-        } finally {
-            applyingSettingsDraft = false
-        }
-        // Automatic discovery is a suggestion, so a later keystroke remains the user's edit.
-        settingsDraft = settingsDraft.copy(serviceAddress = normalizedAddress)
-    }
-
     private fun selectDiscoveredHost(host: DiscoveryHost) {
-        val normalizedAddress = try {
-            normalizeServiceAddress(host.serviceAddress)
-        } catch (error: IllegalArgumentException) {
-            showSettingsError(error.message ?: getString(R.string.invalid_address))
-            return
-        }
-        applyingSettingsDraft = true
-        try {
-            serviceAddressInput.setText(normalizedAddress)
-        } finally {
-            applyingSettingsDraft = false
-        }
-        settingsDraft = updateSettingsDraft(
-            settingsDraft,
-            SettingsField.SERVICE_ADDRESS,
-            normalizedAddress
-        )
-        settingsStatus.text = getString(R.string.discovery_selected, host.name)
-        settingsStatus.setTextColor(getColor(R.color.markerdeck_foreground))
+        startDiscoveredHostConnection(host)
     }
 
     private fun updateDiscoveryLifecycle() {
@@ -971,19 +938,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun connectFromSettings() {
+    private fun connectFromSettings(
+        serviceAddressOverride: String? = null,
+        deviceNameOverride: String? = null,
+        qrSessionId: Long? = null
+    ) {
+        if (qrSessionId == null && qrConnectionFlow.step != QrConnectionStep.IDLE) return
+        if (qrSessionId != null && !isCurrentQrConnection(qrSessionId)) return
+
+        val rawAddress = serviceAddressOverride ?: serviceAddressInput.text.toString()
+        val rawDeviceName = deviceNameOverride ?: deviceNameInput.text.toString()
         val normalizedAddress = try {
-            normalizeServiceAddress(serviceAddressInput.text.toString())
+            normalizeServiceAddress(rawAddress)
         } catch (error: IllegalArgumentException) {
             val message = error.message ?: getString(R.string.invalid_address)
+            if (qrSessionId != null) cancelQrConfirmation(qrSessionId)
             serviceAddressInput.error = message
             showSettingsError(message)
             return
         }
         serviceAddressInput.error = null
-        val normalizedName = normalizeDeviceName(deviceNameInput.text.toString())
+        val normalizedName = normalizeDeviceName(rawDeviceName)
         if (normalizedName.isEmpty()) {
             val message = getString(R.string.device_name_required)
+            if (qrSessionId != null) cancelQrConfirmation(qrSessionId)
             deviceNameInput.error = message
             showSettingsError(message)
             deviceNameInput.requestFocus()
@@ -1006,6 +984,8 @@ class MainActivity : ComponentActivity() {
         deviceNameInput.isEnabled = false
         settingsStatus.setText(R.string.saving_settings_status)
         val saveErrorHandler = CoroutineExceptionHandler { _, error ->
+            if (qrSessionId != null && !isCurrentQrConnection(qrSessionId)) return@CoroutineExceptionHandler
+            if (qrSessionId != null) cancelQrConfirmation(qrSessionId)
             connectButton.isEnabled = true
             scanQrButton.isEnabled = true
             setEmbeddedModeButtonsEnabled(true)
@@ -1015,14 +995,23 @@ class MainActivity : ComponentActivity() {
         }
         activityScope.launch(saveErrorHandler) {
             settingsRepository.save(savedSettings)
+            if (qrSessionId != null && !isCurrentQrConnection(qrSessionId)) return@launch
+            savedSettingsSnapshot = savedSettings
             settingsDraft = settingsDraftFromSaved(savedSettings)
             applySettingsDraftToViews()
             if (!showDisplayScreen(savedSettings)) {
                 showSettingsScreen()
                 showSettingsError(getString(R.string.display_renderer_recovery_failed_settings))
             }
+            if (qrSessionId != null) cancelQrConfirmation(qrSessionId)
         }
     }
+
+    private fun isCurrentQrConnection(sessionId: Long): Boolean =
+        qrConnectionFlow.sessionId == sessionId &&
+            qrConnectionFlow.step == QrConnectionStep.CONNECTING &&
+            !isFinishing &&
+            !isDestroyed
 
     private fun setEmbeddedModeButtonsEnabled(enabled: Boolean) {
         embeddedHostControlsEnabled = enabled
@@ -1371,7 +1360,7 @@ class MainActivity : ComponentActivity() {
                 R.string.lock_screen_permission_guide_message_unsupported
             LockScreenPermissionStatus.GRANTED -> return
         }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.lock_screen_permission_guide_title)
             .setMessage(messageRes)
             .setNegativeButton(R.string.lock_screen_permission_later) { _, _ ->
@@ -1383,7 +1372,13 @@ class MainActivity : ComponentActivity() {
             }
             .setOnCancelListener { markLockScreenPermissionGuideHandled() }
             .setCancelable(false)
-            .show()
+            .create()
+        lockScreenPermissionGuideDialog = dialog
+        dialog.setOnDismissListener {
+            if (lockScreenPermissionGuideDialog === dialog) lockScreenPermissionGuideDialog = null
+            mainHandler.postDelayed({ maybeShowAutoDiscoveryPrompt() }, 250L)
+        }
+        dialog.show()
     }
 
     private fun openSystemPermissionSettings() {
@@ -1436,6 +1431,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showSettingsScreen(stopEmbeddedHost: Boolean = true) {
+        clearAutoDiscoveryPrompt()
+        clearQrConfirmationFlow()
         clearEmergencyControls()
         if (stopEmbeddedHost) stopEmbeddedHostService()
         val shouldClearWebView = webViewHasDisplayPage
@@ -1840,6 +1837,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         activityResumed = false
+        clearAutoDiscoveryPrompt()
         // Keep the active projection state through screen-off so the registered screen-on
         // receiver and onResume can restore the same display surface.
         if (displayActive) pauseWebViewIfNeeded()
@@ -1855,6 +1853,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        clearAutoDiscoveryPrompt()
+        clearQrConfirmationFlow(cancelConnecting = false)
         activityStarted = false
         updateDiscoveryLifecycle()
         super.onStop()
@@ -1875,6 +1875,7 @@ class MainActivity : ComponentActivity() {
         if (!::settingsScreen.isInitialized) return
         refreshLockScreenPermissionStatus()
         maybeShowLockScreenPermissionGuide()
+        maybeShowAutoDiscoveryPrompt()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -1893,6 +1894,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::discoveryScanner.isInitialized) discoveryScanner.stop()
+        clearAutoDiscoveryPrompt()
+        clearQrConfirmationFlow()
         activityScope.cancel()
         mainHandler.removeCallbacksAndMessages(null)
         unregisterScreenStateReceiver()
@@ -1912,5 +1915,386 @@ class MainActivity : ComponentActivity() {
         }
         clearTransientCapabilityWarning()
         super.onDestroy()
+    }
+    private fun onDiscoveryScanFinished(
+        status: DiscoveryScanStatus,
+        message: String,
+        trigger: DiscoveryScanTrigger
+    ) {
+        discoveryUiState = mergeDiscoveryUiState(
+            current = discoveryUiState,
+            status = status,
+            message = message
+        )
+        renderDiscoveryUi()
+        if (status == DiscoveryScanStatus.FOUND && discoveryUiState.hosts.isNotEmpty()) {
+            pendingAutoDiscovery = discoveryUiState.hosts to trigger
+            mainHandler.postDelayed({ maybeShowAutoDiscoveryPrompt() }, 120L)
+        } else if (trigger == DiscoveryScanTrigger.STARTUP) {
+            pendingAutoDiscovery = null
+        }
+    }
+
+    private fun maybeShowAutoDiscoveryPrompt() {
+        val pending = pendingAutoDiscovery ?: return
+        if (!settingsHydrated || !isAutoDiscoveryUiAvailable()) return
+        val decision = decideAutoDiscoveryPrompt(
+            hosts = pending.first,
+            trigger = pending.second,
+            promptedIdentities = promptedAutoDiscoveryIdentities
+        )
+        pendingAutoDiscovery = null
+        if (decision.kind == AutoDiscoveryPromptKind.NONE) return
+        when (decision.kind) {
+            AutoDiscoveryPromptKind.SINGLE_HOST ->
+                showAutoDiscoverySinglePrompt(decision.hosts.single())
+            AutoDiscoveryPromptKind.MULTIPLE_HOSTS ->
+                showAutoDiscoveryHostListPrompt(decision.hosts)
+            AutoDiscoveryPromptKind.NONE -> Unit
+        }
+    }
+
+    private fun clearAutoDiscoveryPrompt() {
+        pendingAutoDiscovery = null
+        val dialog = autoDiscoveryPromptDialog
+        autoDiscoveryPromptDialog = null
+        runCatching { dialog?.dismiss() }
+    }
+
+    private fun isAutoDiscoveryUiAvailable(): Boolean =
+        ::settingsScreen.isInitialized &&
+            settingsScreen.visibility == View.VISIBLE &&
+            !isFinishing &&
+            !isDestroyed &&
+            activityStarted &&
+            activityResumed &&
+            !qrScanInFlight &&
+            qrConnectionFlow.step == QrConnectionStep.IDLE &&
+            lockScreenPermissionGuideStateLoaded &&
+            autoDiscoveryPromptDialog?.isShowing != true &&
+            lockScreenPermissionGuideDialog?.isShowing != true
+
+    private fun showAutoDiscoverySinglePrompt(host: DiscoveryHost) {
+        if (!isAutoDiscoveryUiAvailable()) return
+        promptedAutoDiscoveryIdentities += host.identity
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.auto_discovery_title)
+            .setMessage(
+                getString(
+                    R.string.auto_discovery_message,
+                    host.name,
+                    host.serviceAddress
+                )
+            )
+            .setNegativeButton(R.string.auto_discovery_later, null)
+            .setPositiveButton(R.string.auto_discovery_connect) { _, _ ->
+                mainHandler.post { startDiscoveredHostConnection(host) }
+            }
+            .create()
+        autoDiscoveryPromptDialog = dialog
+        dialog.setOnDismissListener {
+            if (autoDiscoveryPromptDialog === dialog) autoDiscoveryPromptDialog = null
+        }
+        try {
+            dialog.show()
+        } catch (_: RuntimeException) {
+            promptedAutoDiscoveryIdentities.remove(host.identity)
+            autoDiscoveryPromptDialog = null
+        }
+    }
+
+    private fun showAutoDiscoveryHostListPrompt(hosts: List<DiscoveryHost>) {
+        if (!isAutoDiscoveryUiAvailable()) return
+        promptedAutoDiscoveryIdentities += hosts.map(DiscoveryHost::identity)
+        val labels = hosts.map { it.name + "\n" + it.serviceAddress }.toTypedArray()
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.auto_discovery_multiple_title)
+            .setItems(labels) { _, index ->
+                hosts.getOrNull(index)?.let { host ->
+                    mainHandler.post { startDiscoveredHostConnection(host) }
+                }
+            }
+            .setNegativeButton(R.string.auto_discovery_later, null)
+            .create()
+        autoDiscoveryPromptDialog = dialog
+        dialog.setOnDismissListener {
+            if (autoDiscoveryPromptDialog === dialog) autoDiscoveryPromptDialog = null
+        }
+        try {
+            dialog.show()
+        } catch (_: RuntimeException) {
+            hosts.forEach { promptedAutoDiscoveryIdentities.remove(it.identity) }
+            autoDiscoveryPromptDialog = null
+        }
+    }
+
+    private fun startDiscoveredHostConnection(host: DiscoveryHost) {
+        if (!isQrConfirmationUiAvailable()) return
+        val normalizedAddress = try {
+            normalizeServiceAddress(host.serviceAddress)
+        } catch (_: IllegalArgumentException) {
+            showSettingsError(getString(R.string.invalid_address))
+            return
+        }
+        val nextState = beginQrConnectionFlow(
+            current = qrConnectionFlow,
+            normalizedServiceAddress = normalizedAddress,
+            initialDeviceName = currentDeviceNameForQrConfirmation()
+        ) ?: return
+        qrConnectionFlow = nextState.copy(hostName = host.name)
+        val deviceNameState = confirmQrConnectionHost(qrConnectionFlow, nextState.sessionId) ?: run {
+            cancelQrConfirmation(nextState.sessionId)
+            return
+        }
+        qrConnectionFlow = deviceNameState
+        showQrDeviceNameConfirmation(deviceNameState)
+    }
+
+    private fun showQrHostConfirmation(normalizedAddress: String) {
+        if (!isQrConfirmationUiAvailable()) return
+        val initialDeviceName = currentDeviceNameForQrConfirmation()
+        val nextState = beginQrConnectionFlow(
+            current = qrConnectionFlow,
+            normalizedServiceAddress = normalizedAddress,
+            initialDeviceName = initialDeviceName
+        ) ?: return
+        qrConnectionFlow = nextState
+
+        val sessionId = nextState.sessionId
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.qr_host_confirmation_title)
+            .setMessage(qrHostConfirmationMessage(nextState))
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                cancelQrConfirmation(sessionId)
+            }
+            .setPositiveButton(R.string.qr_connect, null)
+            .create()
+        qrHostConfirmationDialog = dialog
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
+                confirmQrHost(sessionId)
+            }
+        }
+        dialog.setOnCancelListener { cancelQrConfirmation(sessionId) }
+        dialog.setOnDismissListener {
+            if (qrHostConfirmationDialog === dialog) qrHostConfirmationDialog = null
+            if (qrConnectionFlow.sessionId == sessionId &&
+                qrConnectionFlow.step == QrConnectionStep.HOST_CONFIRMATION
+            ) {
+                cancelQrConfirmation(sessionId)
+            }
+        }
+        try {
+            dialog.show()
+            startQrHostInfoLookup(sessionId, normalizedAddress, dialog)
+        } catch (_: RuntimeException) {
+            cancelQrConfirmation(sessionId)
+        }
+    }
+
+    private fun currentDeviceNameForQrConfirmation(): String {
+        val currentInput = deviceNameInput.text.toString()
+        return if (currentInput.isNotBlank()) {
+            currentInput
+        } else {
+            settingsDraft.deviceName.ifBlank { savedSettingsSnapshot.deviceName }
+        }
+    }
+
+    private fun qrHostConfirmationMessage(state: QrConnectionFlowState): String {
+        val address = state.normalizedServiceAddress.orEmpty()
+        return if (state.hostName.isNullOrBlank()) {
+            getString(R.string.qr_host_confirmation_message, address)
+        } else {
+            getString(
+                R.string.qr_host_confirmation_message_with_name,
+                address,
+                state.hostName
+            )
+        }
+    }
+
+    private fun startQrHostInfoLookup(
+        sessionId: Long,
+        normalizedAddress: String,
+        dialog: AlertDialog
+    ) {
+        qrHostInfoJob?.cancel()
+        qrHostInfoJob = activityScope.launch(Dispatchers.IO) {
+            val hostName = fetchQrHostInfoName(normalizedAddress) ?: return@launch
+            withContext(Dispatchers.Main.immediate) {
+                if (!isCurrentQrHostConfirmation(sessionId, dialog)) return@withContext
+                qrConnectionFlow = updateQrConnectionHostName(
+                    current = qrConnectionFlow,
+                    sessionId = sessionId,
+                    hostName = hostName
+                )
+                dialog.setMessage(qrHostConfirmationMessage(qrConnectionFlow))
+            }
+        }
+    }
+
+    private fun isCurrentQrHostConfirmation(
+        sessionId: Long,
+        dialog: AlertDialog
+    ): Boolean = !isFinishing && !isDestroyed && activityResumed &&
+        qrConnectionFlow.sessionId == sessionId &&
+        qrConnectionFlow.step == QrConnectionStep.HOST_CONFIRMATION &&
+        qrHostConfirmationDialog === dialog &&
+        dialog.isShowing
+
+    private fun confirmQrHost(sessionId: Long) {
+        val nextState = confirmQrConnectionHost(qrConnectionFlow, sessionId) ?: return
+        qrConnectionFlow = nextState
+        qrHostInfoJob?.cancel()
+        qrHostInfoJob = null
+        qrHostConfirmationDialog?.dismiss()
+        showQrDeviceNameConfirmation(nextState)
+    }
+
+    private fun showQrDeviceNameConfirmation(state: QrConnectionFlowState) {
+        if (!isQrConfirmationUiAvailable()) {
+            cancelQrConfirmation(state.sessionId)
+            return
+        }
+        val sessionId = state.sessionId
+        val nameInput = EditText(this).apply {
+            background = getDrawable(R.drawable.markerdeck_input)
+            hint = getString(R.string.qr_device_name_hint)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            isSingleLine = true
+            maxLines = 1
+            minHeight = (52 * resources.displayMetrics.density).toInt()
+            val horizontalPadding = (14 * resources.displayMetrics.density).toInt()
+            setPadding(horizontalPadding, 0, horizontalPadding, 0)
+            setTextColor(getColor(R.color.markerdeck_foreground))
+            setHintTextColor(getColor(R.color.markerdeck_muted))
+            textSize = 16f
+            filters = arrayOf(InputFilter.LengthFilter(MAX_DEVICE_NAME_LENGTH))
+            setText(state.initialDeviceName)
+            setSelection(text.length)
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(
+                    s: CharSequence?,
+                    start: Int,
+                    count: Int,
+                    after: Int
+                ) = Unit
+
+                override fun onTextChanged(
+                    s: CharSequence?,
+                    start: Int,
+                    before: Int,
+                    count: Int
+                ) {
+                    if (text.toString().trim().isNotEmpty()) error = null
+                }
+
+                override fun afterTextChanged(s: Editable?) = Unit
+            })
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.qr_device_name_title)
+            .setMessage(R.string.qr_device_name_message)
+            .setView(nameInput)
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                cancelQrConfirmation(sessionId)
+            }
+            .setPositiveButton(R.string.qr_connect, null)
+            .create()
+        qrDeviceNameDialog = dialog
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
+                val nextState = confirmQrConnectionDeviceName(
+                    current = qrConnectionFlow,
+                    sessionId = sessionId,
+                    rawDeviceName = nameInput.text.toString()
+                )
+                if (nextState == null) {
+                    nameInput.error = getString(R.string.qr_device_name_required)
+                    nameInput.requestFocus()
+                    return@setOnClickListener
+                }
+                val address = nextState.normalizedServiceAddress ?: return@setOnClickListener
+                val deviceName = nextState.confirmedDeviceName ?: return@setOnClickListener
+                qrConnectionFlow = nextState
+                dialog.dismiss()
+                connectFromSettings(
+                    serviceAddressOverride = address,
+                    deviceNameOverride = deviceName,
+                    qrSessionId = sessionId
+                )
+            }
+        }
+        dialog.setOnCancelListener { cancelQrConfirmation(sessionId) }
+        dialog.setOnDismissListener {
+            if (qrDeviceNameDialog === dialog) qrDeviceNameDialog = null
+            if (qrConnectionFlow.sessionId == sessionId &&
+                qrConnectionFlow.step == QrConnectionStep.DEVICE_NAME_CONFIRMATION
+            ) {
+                cancelQrConfirmation(sessionId)
+            }
+        }
+        try {
+            dialog.show()
+            nameInput.requestFocus()
+        } catch (_: RuntimeException) {
+            cancelQrConfirmation(sessionId)
+        }
+    }
+
+    private fun isQrConfirmationUiAvailable(): Boolean =
+        ::settingsScreen.isInitialized &&
+            settingsScreen.visibility == View.VISIBLE &&
+            !isFinishing &&
+            !isDestroyed &&
+            activityStarted &&
+            activityResumed &&
+            autoDiscoveryPromptDialog?.isShowing != true &&
+            lockScreenPermissionGuideDialog?.isShowing != true
+
+    private fun cancelQrConfirmation(sessionId: Long) {
+        if (qrConnectionFlow.sessionId != sessionId) return
+        val shouldReportCancellation =
+            qrConnectionFlow.step == QrConnectionStep.HOST_CONFIRMATION ||
+                qrConnectionFlow.step == QrConnectionStep.DEVICE_NAME_CONFIRMATION
+        qrHostInfoJob?.cancel()
+        qrHostInfoJob = null
+        qrConnectionFlow = cancelQrConnectionFlow(qrConnectionFlow, sessionId)
+        if (shouldReportCancellation && isQrConfirmationUiAvailable()) {
+            qrScanStatusText.visibility = View.VISIBLE
+            qrScanStatusText.text = getString(R.string.qr_connection_cancelled)
+            qrScanStatusText.setTextColor(getColor(R.color.markerdeck_muted))
+        }
+    }
+
+    private fun clearQrConfirmationFlow(cancelConnecting: Boolean = true) {
+        val wasConnecting = qrConnectionFlow.step == QrConnectionStep.CONNECTING
+        qrHostInfoJob?.cancel()
+        qrHostInfoJob = null
+        if (!cancelConnecting && wasConnecting) {
+            val hostDialog = qrHostConfirmationDialog
+            val nameDialog = qrDeviceNameDialog
+            qrHostConfirmationDialog = null
+            qrDeviceNameDialog = null
+            runCatching { hostDialog?.dismiss() }
+            runCatching { nameDialog?.dismiss() }
+            return
+        }
+        qrConnectionFlow = cancelQrConnectionFlow(qrConnectionFlow, qrConnectionFlow.sessionId)
+        val hostDialog = qrHostConfirmationDialog
+        val nameDialog = qrDeviceNameDialog
+        qrHostConfirmationDialog = null
+        qrDeviceNameDialog = null
+        runCatching { hostDialog?.dismiss() }
+        runCatching { nameDialog?.dismiss() }
+        if (wasConnecting && ::settingsScreen.isInitialized && !isFinishing && !isDestroyed) {
+            connectButton.isEnabled = true
+            scanQrButton.isEnabled = !qrScanInFlight
+            setEmbeddedModeButtonsEnabled(true)
+            serviceAddressInput.isEnabled = true
+            deviceNameInput.isEnabled = true
+        }
     }
 }

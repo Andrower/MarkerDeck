@@ -17,6 +17,8 @@ class HostProtocolTest {
         assertEquals("摄影棚主控", info.name)
         assertFalse(info.capabilities.videoExport)
         assertTrue(info.capabilities.sse)
+        assertFalse(info.capabilities.udpDiscovery)
+        assertFalse(info.capabilities.mdnsDiscovery)
     }
 
     @Test

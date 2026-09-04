@@ -52,6 +52,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - name: Install Node runtime dependencies
+        run: npm ci --omit=dev
+
       - name: Prepare Node.js arm64 runtime
         shell: bash
         run: |
@@ -86,6 +93,9 @@ jobs:
         with:
           version: 11.9.0
           run_install: false
+
+      - name: Install Node runtime dependencies
+        run: npm ci --omit=dev
 
       - name: Prepare Windows runtimes
         shell: pwsh
@@ -131,7 +141,9 @@ jobs:
             "MarkerDeck.exe",
             "ffmpeg.dll",
             "resources/server/node-windows/node.exe",
-            "resources/server/ffmpeg-windows/ffmpeg.exe"
+            "resources/server/ffmpeg-windows/ffmpeg.exe",
+            "resources/server/node_modules/bonjour-service/package.json",
+            "resources/server/node_modules/multicast-dns/index.js"
           )
           foreach ($relativePath in $requiredFiles) {
             $fullPath = Join-Path $verifyRoot $relativePath

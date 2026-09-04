@@ -92,6 +92,58 @@ class DiscoveryProtocolTest {
         assertFalse(merged.message.isNotEmpty())
     }
 
+    @Test
+    fun validatesNsdTxtAndBuildsOriginFromTheResolvedPeerAddress() {
+        val host = validateMdnsCandidate(
+            MdnsDiscoveryRecord(
+                serviceType = MARKERDECK_MDNS_NSD_SERVICE_TYPE,
+                serviceName = "MarkerDeck-instance-1234",
+                port = 8765,
+                sourceAddress = "192.168.1.30",
+                txt = mapOf(
+                    "service" to "markerdeck",
+                    "protocolVersion" to "1",
+                    "instanceId" to "instance-1234",
+                    "name" to "局域网主控"
+                )
+            )
+        )
+
+        assertNotNull(host)
+        assertEquals("http://192.168.1.30:8765", host?.serviceAddress)
+    }
+
+    @Test
+    fun rejectsInvalidNsdTxtPublicAddressAndTheLocalInstance() {
+        val record = MdnsDiscoveryRecord(
+            serviceType = MARKERDECK_MDNS_SERVICE_TYPE,
+            serviceName = "MarkerDeck",
+            port = 8765,
+            sourceAddress = "8.8.8.8",
+            txt = mapOf(
+                "service" to "markerdeck",
+                "protocolVersion" to "1",
+                "instanceId" to "instance-1234",
+                "name" to "MarkerDeck"
+            )
+        )
+        assertNull(validateMdnsCandidate(record))
+        assertNull(
+            validateMdnsCandidate(
+                record.copy(sourceAddress = "192.168.1.30"),
+                selfInstanceId = "instance-1234"
+            )
+        )
+        assertNull(
+            validateMdnsCandidate(
+                record.copy(
+                    sourceAddress = "192.168.1.30",
+                    txt = record.txt + ("protocolVersion" to "2")
+                )
+            )
+        )
+    }
+
     private fun advertisement(
         protocolVersion: Int = MARKERDECK_DISCOVERY_PROTOCOL_VERSION,
         nonce: String = this.nonce,

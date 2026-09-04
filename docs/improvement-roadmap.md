@@ -140,17 +140,17 @@
 
 - **范围**：为 Android Release 配置受保护的签名密钥与 CI secrets，构建可安装的签名 APK，生成校验值并上传 GitHub Actions/Release 产物；保持现有 macOS、Windows 和服务端 Release 流程不回归。APK 只包含 Android 客户端，不打包 Node.js 或 FFmpeg。
 - **产物**：签名配置说明、GitHub Actions Android 构建/上传 job、签名 APK、SHA-256 校验值、Release 说明和安装/升级/回滚说明。
-- **验收标准**：从发布标签或明确的手动构建入口生成可验证签名的 APK，并上传到对应 Release；密钥不进入仓库或日志；在 A06 已验证的设备上完成安装和启动，单宿主可自动填充但仍要求用户明确点击连接，多宿主可选择且保留手动地址；现有桌面 Release 产物和 v1.3.0 服务端兼容性不受影响。
+- **验收标准**：从发布标签或明确的手动构建入口生成可验证签名的 APK，并上传到对应 Release；密钥不进入仓库或日志；在 A06 已验证的设备上完成安装和启动，自动发现单宿主时先询问连接并在确认后命名设备，多宿主可选择且保留手动地址；现有桌面 Release 产物和 v1.3.0 服务端兼容性不受影响。
 - **依赖**：MD-A01、MD-A06；需要受保护的签名密钥、GitHub Actions 权限和已通过前置门禁的测试结果。
 
 #### MD-A08 局域网宿主自动发现与简化地址输入
 
-状态：代码、纯逻辑单测和服务端 UDP/HTTP 集成测试已实现；真实 Android 无线设备和多宿主现场验收待完成。
+状态：UDP/HTTP 基础、mDNS 扩展、纯逻辑单测和组合集成测试已实现；真实 Android 无线设备、多宿主和不同路由器现场验收待完成，详见 MD-A14。
 
-- **范围**：服务端在固定 UDP `8766` 端口提供版本化 `markerdeck` 广播/多播响应，返回名称、HTTP 端口、HTTP origin、实例 ID 和 nonce；Android 设置页在 Wi-Fi/以太网前台执行短时扫描，获取候选后通过候选源地址的 `/api/discovery` HTTP 握手校验，再展示或建议填入宿主。手动地址继续接受裸 IP、`IP:端口`、`localhost:端口` 和完整 HTTP(S) 地址。
+- **范围**：服务端在固定 UDP `8766` 端口提供版本化 `markerdeck` 广播/多播响应，并通过 DNS-SD `_markerdeck._tcp.local` 发布名称、HTTP 端口和实例 ID；Android 设置页在 Wi-Fi/以太网前台同时执行短时 mDNS/UDP 扫描，获取候选后通过候选源地址的 `/api/discovery` HTTP 握手校验，再展示连接询问或宿主列表。手动地址继续接受裸 IP、`IP:端口`、`localhost:端口` 和完整 HTTP(S) 地址。
 - **安全与边界**：不做全网端口扫描、公网发现、后台持续扫描或未经校验的导航；仅接受协议版本、nonce、实例、端口、HTTP origin 和局域网 IPv4 均匹配的响应，并使用观测到的 UDP 对端地址生成最终服务 origin。nonce 不是认证机制，现场仍需可信局域网和现有 URL/cleartext 约束。
 - **产物**：UDP 发现服务、HTTP nonce 握手端点、Android 发现状态/刷新/多宿主选择 UI、电脑 Node 主动扫描器与启动页宿主列表、网络回调和多播锁生命周期处理、地址标准化及发现响应/状态归并纯逻辑测试、构建与现场验收清单。
-- **验收标准**：一个宿主自动填入空且未编辑的字段；多个宿主可点击选择；电脑启动页能扫描、验证并打开手机或其他电脑宿主且不列出自身；刷新、网络切换、Activity 暂停/恢复和发现失败不泄漏回调、不覆盖用户输入并回退手动输入；现有投放 URL 拼接、同源校验和 v1.3.0 HTTP/SSE 行为不回归。
+- **验收标准**：Android 启动发现一个宿主时先询问是否连接，多个宿主显示可选列表且不会擅自连接；电脑启动页能扫描、验证并打开手机或其他电脑宿主且不列出自身；刷新、网络切换、Activity 暂停/恢复和发现失败不泄漏回调、不覆盖用户输入并回退手动输入；现有投放 URL 拼接、同源校验和 v1.3.0 HTTP/SSE 行为不回归。
 - **依赖**：MD-A01、MD-A02；需要可访问的同一局域网服务端、Android Wi-Fi/以太网设备和多宿主/网络切换测试环境。
 
 #### MD-A09 Android Host MVP 前台宿主
@@ -170,9 +170,9 @@
 
 - **范围**：在 Android 设置页的服务地址输入附近增加清晰的“扫描二维码”入口，使用成熟的 JourneyApps ZXing Embedded `ScanContract` 和 AndroidX Activity Result API，并通过 MarkerDeck 自有 `CaptureActivity` 子类承载扫码；Manifest 将该 Activity 设置为 `sensorPortrait`、`exported=false`，`ScanOptions` 显式锁定方向，允许正反竖屏且绝不横屏。方向限制只作用于扫码 Activity，不改变投放 WebView、本地投放或宿主控制页的横竖屏行为；同时保持小屏滚动、状态栏/刘海安全区、自动发现、手动输入、内置宿主状态和普通投放布局互不重叠。
 - **地址边界**：复用现有 `normalizeServiceAddress`，接受当前 MarkerDeck 启动页的完整 `markerdeck-launch.html` URL、控制端/投放端 URL、带 query 的 HTTP(S) URL 和裸 IP/IP:端口，统一写入服务 origin；拒绝空内容、无效主机/端口及 `javascript:`, `file:`, `ftp:` 等非 HTTP(S) scheme。不改变桌面端、自动发现协议、网页二维码编码格式或现有安全锁行为。
-- **权限与失败处理**：Manifest 将相机声明为可选硬件能力；只有点击扫码按钮后才检查并申请 `CAMERA`。权限拒绝、取消、无相机、空/非法二维码和扫码器异常显示可读状态，保留此前地址输入；成功只填入地址并要求用户继续点击连接确认，不自动导航或保存配置。
+- **权限与失败处理**：Manifest 将相机声明为可选硬件能力；只有点击扫码按钮后才检查并申请 `CAMERA`。权限拒绝、取消、无相机、空/非法二维码和扫码器异常显示可读状态，保留此前地址输入；成功后先由用户确认宿主连接，再确认设备名称，复用被控端入口，不自动导航或保存配置。
 - **产物**：ZXing Embedded/Activity Result 依赖、二维码宿主地址解析和扫码状态纯逻辑模块、设置页按钮/状态 UI、权限与扫码结果回调、JVM 测试、Android README 和手工验收清单。
-- **验收标准**：小屏和带 cutout 的设置页中按钮、结果状态、自动发现、手动输入和宿主状态均不重叠；首次点击前不请求相机权限；扫码 Activity 清单为 `sensorPortrait` 且 `exported=false`，有效 URL/裸 IP 能正确归一化，非法 scheme/内容不改变原输入；取消、拒绝、无相机和扫描失败均有状态；成功后停留设置页且不进入投放；Android 单测、`lintDebug`、`assembleDebug` 和根目录 Node 检查通过或准确记录环境阻断原因。
+- **验收标准**：小屏和带 cutout 的设置页中按钮、结果状态、自动发现、手动输入和宿主状态均不重叠；首次点击前不请求相机权限；扫码 Activity 清单为 `sensorPortrait` 且 `exported=false`，有效 URL/裸 IP 能正确归一化，非法 scheme/内容不改变原输入；取消、拒绝、无相机和扫描失败均有状态；成功后停留设置页并等待宿主/设备名确认，不未经确认进入投放；Android 单测、`lintDebug`、`assembleDebug` 和根目录 Node 检查通过或准确记录环境阻断原因。
 - **依赖**：MD-A01、MD-A02、MD-A08；需要 Android Studio JBR/SDK、可显示现有 MarkerDeck 二维码的服务端，以及至少一台有相机和一台无相机/可拒绝权限的 Android 测试环境。
 
 #### MD-A11 亮度与远程锁定延迟优化
@@ -184,6 +184,18 @@
 - **锁定回退**：SSE 健康时即时下发；SSE 暂断时，约 1.5 秒注册心跳返回的持久目标状态必须经过 `applyRemoteState`，并与 15 秒低频状态拉取共用去重/ACK 逻辑。首次注册建立当前全局命令 baseline，不重放历史全局命令；后续全局 ID 变化才执行。远程锁定先更新 locked DOM/canvas/native Electron 状态，不尝试无用户手势的 `requestFullscreen`；本地用户操作仍可请求浏览器 Fullscreen。控制端刷新状态可并行，不能改变批量目标、ACK 计数或离线回退。
 - **兼容与验证**：服务端和 Android Host 的状态白名单接纳 `overallBrightness` 并保留未知字段过滤；注册响应保留全局命令 ID/命令，锁定 SSE 事件增加可选 global 标记，旧客户端仍可忽略新增字段。补充 RGB 折色、幂等、旧预设、总体亮度组合、Node/Android canonical state、渲染计算、注册心跳持久锁回退和中文设备名保存/返回断言；设备名上限继续为 40 字符。子项记录见 `docs/tasks/MD-A11.md`。
 - **依赖**：MD-A01、MD-A02、MD-A03、MD-A09、MD-A10；需要 Android Studio JBR/SDK、至少一台可运行本地/远程投放的 Android 设备，以及可主动中断/恢复 SSE 的服务端测试环境。
+
+#### MD-A14 局域网 mDNS 自动发现与启动连接询问
+
+状态：代码、Node/Android 纯逻辑与组合测试、Lint、debug 构建、打包结构检查和文档已完成；真实 Android、跨设备 mDNS 和不同路由器现场验收待完成。
+
+- **发现协议**：在现有 UDP `8766` 广播/组播和手动地址回退之上增加 DNS-SD `_markerdeck._tcp.local`。Node 使用 bonjour-service，Android 使用系统 `NsdManager`。发布 TXT 至少包含 `service=markerdeck`、`protocolVersion=1`、`instanceId`；`/api/info` 同时准确报告 `mdnsDiscovery` 与 `udpDiscovery`。
+- **信任边界**：Node `/api/hosts` 与 Android 设置扫描同时采集 mDNS/UDP，按实例和观测地址去重，只接受安全文本、版本、实例 ID、合法端口以及私有/回环 IPv4，排除自身。广播名称、URL 和 TXT 不直接可信，最终必须通过观测地址的 nonce `/api/discovery` HTTP 验真；mDNS 出错时回退 UDP/手动输入。
+- **Android 宿主生命周期**：一次 `HostLifecycleController` 会话共享一个 instanceId 给 HTTP host、UDP responder 和 mDNS publisher；停止、Activity/前台宿主切换和 `/api/shutdown` 路径可靠注销 NsdManager 服务、停止 UDP 并释放多播锁。
+- **Android 交互**：默认启动在设置/模式页以非阻塞短超时执行 mDNS 与 UDP。单宿主先询问是否连接，多个宿主显示可选列表；确认后复用 QR 宿主确认、设备命名和普通投放入口。拒绝或无宿主继续模式选择；启动会话内相同宿主只提示一次，刷新/用户主动扫描可再次选择。系统权限引导、扫码弹窗、锁屏引导和 Activity 非交互状态不会被自动提示打断。
+- **发布物**：macOS/Windows 服务 ZIP 与 Electron 包递归携带 bonjour-service 生产依赖，CI 在打包前执行 `npm ci`，静态检查确认资源结构；Android 不包含 Node.js/FFmpeg。
+- **验收**：Node `npm run check`、Android `:app:test :app:lintDebug :app:assembleDebug`、`git diff --check` 和便携包结构检查均纳入本地/CI 门禁。真机、跨设备 mDNS 和不同路由器行为仍必须单独记录，不写成自动化测试已通过。
+- **依赖**：MD-A08、MD-A09、MD-A10；需真实 Android 设备、至少两台同网宿主/被控端和可观察 mDNS 的不同路由器环境。
 
 ### 5. 关键门禁与共同验收
 
@@ -224,7 +236,7 @@ MarkerDeck/
 - **M2 普通投放可靠性**：MD-A06 完成普通投放的设备/API 支持矩阵、20 次灭屏/亮屏、弱网和 WebView 异常记录。
 - **M3 可发布 APK**：MD-A07 生成签名 APK、校验值和 GitHub Release 产物；未验证的 Android API/OEM 不写入支持声明。
 
-建议依赖顺序为 `MD-A01 -> MD-A02 -> MD-A03 -> MD-A08 -> MD-A09 -> MD-A10 -> MD-A11 -> MD-A06 -> MD-A07`；MD-A09 作为 Android 宿主纵切并行维护，MD-A10/MD-A11 不改变普通投放和兼容性门禁。
+建议依赖顺序为 `MD-A01 -> MD-A02 -> MD-A03 -> MD-A08 -> MD-A09 -> MD-A10 -> MD-A11 -> MD-A14 -> MD-A06 -> MD-A07`；MD-A09 作为 Android 宿主纵切并行维护，MD-A10/MD-A11/MD-A14 不改变普通投放和兼容性门禁。
 
 浏览器/PWA 不作为满足强前台的实现。
 

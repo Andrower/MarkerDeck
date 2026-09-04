@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 实现 MD-A14 局域网 mDNS 自动发现：Node 使用 bonjour-service 发布 `_markerdeck._tcp.local`，Android 使用 NsdManager 发布/扫描并与 UDP 兼容回退；所有候选继续经过 nonce HTTP 验真，`/api/info` 增加准确的 `mdnsDiscovery` 能力。Android 启动时会在设置页短时发现并先询问连接，支持多宿主选择、设备命名复用、一次会话去重和生命周期清理；便携包与 Electron 包递归携带 bonjour-service 运行时依赖。真机、跨设备及不同路由器的 mDNS 现场验证仍待完成。
 - 整理 MD-A12 仓库主页与发布入口：以实际使用者为中心重写 README，补充四个平台下载说明、能力矩阵、网络与锁定边界、文档索引和任务记录。
 
 ## 1.5.0 - 2026-09-03

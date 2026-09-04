@@ -54,6 +54,8 @@ class AndroidHostServerTest {
         val capabilities = JSONObject(info.second).getJSONObject("capabilities")
         assertEquals(false, capabilities.getBoolean("videoExport"))
         assertEquals(false, capabilities.getBoolean("hostDiscovery"))
+        assertEquals(false, capabilities.getBoolean("udpDiscovery"))
+        assertEquals(false, capabilities.getBoolean("mdnsDiscovery"))
 
         val asset = request("/markerdeck-screen.html")
         assertEquals(200, asset.first)
