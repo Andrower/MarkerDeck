@@ -29,12 +29,13 @@ const HOST_SCAN_TARGETS = String(process.env.MARKERDECK_HOST_SCAN_TARGETS || "")
   .map((value) => value.trim())
   .filter(Boolean);
 const DISCOVERY_NAME = String(process.env.MARKERDECK_DISCOVERY_NAME || "MarkerDeck").trim().slice(0, 40) || "MarkerDeck";
+const MDNS_DISABLED = process.env.MARKERDECK_MDNS_DISABLED === "1";
 const DISCOVERY_INSTANCE_ID = crypto.randomBytes(12).toString("hex");
 const hostScanner = createMarkerDeckHostScanner({
   discoveryPort: HOST_SCAN_PORT,
   selfInstanceId: DISCOVERY_INSTANCE_ID,
   targets: HOST_SCAN_TARGETS,
-  mdnsDisabled: process.env.MARKERDECK_MDNS_DISABLED === "1"
+  mdnsDisabled: MDNS_DISABLED
 });
 const DISCOVERY_MAX_PACKET_SIZE = 4096;
 const ROOT = __dirname;
@@ -668,7 +669,8 @@ function startMdnsPublisher() {
   mdnsPublisher = createMarkerDeckMdnsPublisher({
     name: DISCOVERY_NAME,
     port: PORT,
-    instanceId: DISCOVERY_INSTANCE_ID
+    instanceId: DISCOVERY_INSTANCE_ID,
+    disabled: MDNS_DISABLED
   });
   mdnsPublisher.onError((error) => {
     console.error(`MarkerDeck mDNS discovery unavailable: ${error.message}`);

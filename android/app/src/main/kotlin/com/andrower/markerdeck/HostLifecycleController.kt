@@ -183,13 +183,28 @@ class HostLifecycleController(
                     if (mdnsPublisher === nextPublisher) {
                         mdnsDiscoveryAvailable = available
                         updateSessionDiscoveryAvailability()
+                        if (shouldReleaseMulticastLock(
+                                udpDiscoveryAvailable = udpDiscoveryAvailable,
+                                mdnsDiscoveryAvailable = mdnsDiscoveryAvailable,
+                                mdnsRegistrationAccepted = available
+                            )
+                        ) {
+                            releaseMulticastLock()
+                        }
                     }
                 }
             }
         )
         mdnsPublisher = nextPublisher
         val mdnsStarted = nextPublisher.start()
-        if (!udpDiscoveryAvailable) releaseMulticastLock()
+        if (shouldReleaseMulticastLock(
+                udpDiscoveryAvailable = udpDiscoveryAvailable,
+                mdnsDiscoveryAvailable = mdnsDiscoveryAvailable,
+                mdnsRegistrationAccepted = mdnsStarted
+            )
+        ) {
+            releaseMulticastLock()
+        }
         if (!mdnsStarted && !udpDiscoveryAvailable) {
             nextPublisher.stop()
             mdnsPublisher = null
@@ -244,3 +259,9 @@ class HostLifecycleController(
         val mdns: Boolean = false
     )
 }
+
+internal fun shouldReleaseMulticastLock(
+    udpDiscoveryAvailable: Boolean,
+    mdnsDiscoveryAvailable: Boolean,
+    mdnsRegistrationAccepted: Boolean
+): Boolean = !udpDiscoveryAvailable && !mdnsDiscoveryAvailable && !mdnsRegistrationAccepted

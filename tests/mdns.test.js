@@ -59,6 +59,23 @@ test("keeps HTTP service alive when mDNS publication fails", () => {
   assert.equal(publisher.isAvailable(), false);
 });
 
+test("does not instantiate Bonjour when mDNS is disabled", () => {
+  let factoryCalled = false;
+  const publisher = createMarkerDeckMdnsPublisher({
+    disabled: true,
+    name: "MarkerDeck",
+    port: 8765,
+    instanceId,
+    bonjourFactory: () => {
+      factoryCalled = true;
+      return { publish: () => ({}), destroy: () => {} };
+    }
+  });
+
+  assert.equal(publisher.start(), false);
+  assert.equal(factoryCalled, false);
+});
+
 test("normalizes bonjour TXT buffers and rejects unsafe mDNS candidates", () => {
   const candidates = normalizedServiceCandidates({
     type: "markerdeck",

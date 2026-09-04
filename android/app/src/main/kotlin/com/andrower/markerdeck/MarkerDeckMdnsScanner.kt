@@ -19,7 +19,6 @@ class MarkerDeckMdnsScanner(context: Context) {
     }
 
     companion object {
-        private const val MAX_CONCURRENT_RESOLVES = 3
         private const val MAX_TXT_VALUE_BYTES = 512
     }
 
@@ -27,11 +26,10 @@ class MarkerDeckMdnsScanner(context: Context) {
         .getSystemService(Context.NSD_SERVICE) as? NsdManager
     private val mainHandler = Handler(Looper.getMainLooper())
     private val lifecycleLock = Any()
-    private val resolveQueue = ArrayDeque<NsdServiceInfo>()
+    private val resolveQueue = MdnsResolveQueue<NsdServiceInfo>()
     private val resolvedServiceKeys = mutableSetOf<String>()
     private var discoveryListener: NsdManager.DiscoveryListener? = null
     private var listener: Listener? = null
-    private var activeResolveCount = 0
     private var generation = 0L
     private var timeoutCallback: Runnable? = null
 
@@ -42,7 +40,6 @@ class MarkerDeckMdnsScanner(context: Context) {
             generation += 1
             resolveQueue.clear()
             resolvedServiceKeys.clear()
-            activeResolveCount = 0
             listener = nextListener
             generation
         }
@@ -77,7 +74,6 @@ class MarkerDeckMdnsScanner(context: Context) {
             discoveryListener = null
             listener = null
             resolveQueue.clear()
-            activeResolveCount = 0
             timeoutCallback?.let(mainHandler::removeCallbacks)
             timeoutCallback = null
             Triple(oldListener, oldFinish, nsdManager)
@@ -100,7 +96,7 @@ class MarkerDeckMdnsScanner(context: Context) {
                 val key = "${serviceInfo.serviceType}|${serviceInfo.serviceName}"
                 synchronized(lifecycleLock) {
                     if (generation != token || !resolvedServiceKeys.add(key)) return
-                    resolveQueue.addLast(serviceInfo)
+                    resolveQueue.enqueue(serviceInfo)
                 }
                 drainResolveQueue(token)
             }
@@ -124,14 +120,7 @@ class MarkerDeckMdnsScanner(context: Context) {
         val manager = nsdManager ?: return
         while (true) {
             val serviceInfo = synchronized(lifecycleLock) {
-                if (generation != token || activeResolveCount >= MAX_CONCURRENT_RESOLVES ||
-                    resolveQueue.isEmpty()
-                ) {
-                    null
-                } else {
-                    activeResolveCount += 1
-                    resolveQueue.removeFirst()
-                }
+                if (generation != token) null else resolveQueue.takeNext()
             } ?: return
             val resolveListener = createResolveListener(token)
             try {
@@ -157,7 +146,7 @@ class MarkerDeckMdnsScanner(context: Context) {
     private fun resolveFinished(token: Long) {
         synchronized(lifecycleLock) {
             if (generation != token) return
-            activeResolveCount = (activeResolveCount - 1).coerceAtLeast(0)
+            resolveQueue.complete()
         }
         drainResolveQueue(token)
     }
@@ -191,7 +180,6 @@ class MarkerDeckMdnsScanner(context: Context) {
             discoveryListener = null
             listener = null
             resolveQueue.clear()
-            activeResolveCount = 0
             timeoutCallback?.let(mainHandler::removeCallbacks)
             timeoutCallback = null
             Triple(oldDiscoveryListener, oldListener, nsdManager)
@@ -202,4 +190,41 @@ class MarkerDeckMdnsScanner(context: Context) {
         }
         finishData.second?.onFinished()
     }
+}
+
+internal const val MARKERDECK_MDNS_MAX_CONCURRENT_RESOLVES = 1
+
+/** Small state model for the API 26 single-active-resolve restriction. */
+internal class MdnsResolveQueue<T>(
+    private val maxInFlight: Int = MARKERDECK_MDNS_MAX_CONCURRENT_RESOLVES
+) {
+    private val pending = ArrayDeque<T>()
+    private var active = 0
+
+    init {
+        require(maxInFlight > 0)
+    }
+
+    fun clear() {
+        pending.clear()
+        active = 0
+    }
+
+    fun enqueue(value: T) {
+        pending.addLast(value)
+    }
+
+    fun takeNext(): T? {
+        if (active >= maxInFlight || pending.isEmpty()) return null
+        active += 1
+        return pending.removeFirst()
+    }
+
+    fun complete() {
+        active = (active - 1).coerceAtLeast(0)
+    }
+
+    fun pendingCount(): Int = pending.size
+
+    fun activeCount(): Int = active
 }
