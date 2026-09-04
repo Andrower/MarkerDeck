@@ -32,17 +32,23 @@ const requiredFiles = [
   "LICENSE",
   "src/markerdeck-server.js",
   "src/markerdeck-host-discovery.js",
+  "src/markerdeck-mdns.js",
+  "package-lock.json",
   "src/web/markerdeck-screen.html",
   "src/web/markerdeck-launch.html",
   "docs/tasks/README.md",
   "docs/tasks/MD-A11.md",
+  "docs/tasks/MD-A14.md",
   ...screenAssets,
   "desktop/electron/main.js",
   "desktop/electron/preload.js",
   "desktop/electron/package.json",
   "platform/macos/start-markerdeck-server.command",
   "platform/windows/start-markerdeck-server.bat",
-  "tests/host-discovery.test.js"
+  "tests/host-discovery.test.js",
+  "tests/mdns.test.js",
+  "scripts/package-macos.sh",
+  "scripts/package-windows.ps1"
 ];
 
 const androidRequiredFiles = [
@@ -60,6 +66,9 @@ const androidRequiredFiles = [
   "android/app/src/main/kotlin/com/andrower/markerdeck/ProjectionEmergencyControls.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/DiscoveryProtocol.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/DiscoveryScanner.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/MarkerDeckMdnsScanner.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/MarkerDeckMdnsPublisher.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/DiscoveryAutoConnect.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/LifecycleRecovery.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/ProjectionBrightness.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/PermissionSettings.kt",
@@ -78,6 +87,8 @@ const androidRequiredFiles = [
   "android/app/src/main/kotlin/com/andrower/markerdeck/HostStateStore.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/HostUdpResponder.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/QrHostScan.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/QrConnectionFlow.kt",
+  "android/app/src/main/kotlin/com/andrower/markerdeck/QrHostInfo.kt",
   "android/app/src/main/kotlin/com/andrower/markerdeck/QrSvg.kt",
   "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
   "android/app/src/main/res/drawable/ic_launcher_monochrome.xml",
@@ -94,6 +105,9 @@ const androidRequiredFiles = [
   "android/app/src/main/res/xml/data_extraction_rules.xml",
   "android/app/src/test/kotlin/com/andrower/markerdeck/ServiceUrlTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/DiscoveryProtocolTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/DiscoveryAutoConnectTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/MdnsLifecycleTest.kt",
+  "android/app/src/test/kotlin/com/andrower/markerdeck/QrConnectionFlowTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/LifecycleRecoveryTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/PermissionSettingsTest.kt",
   "android/app/src/test/kotlin/com/andrower/markerdeck/SettingsTest.kt",
@@ -117,6 +131,21 @@ assert.match(androidBuild, /org\.nanohttpd:nanohttpd:/, "Android host must use N
 assert.match(androidBuild, /com\.google\.zxing:core:/, "Android host must use ZXing core");
 assert.match(androidBuild, /com\.journeyapps:zxing-android-embedded:/,
   "Android QR scanner must use JourneyApps ZXing Embedded");
+
+const mdnsNodeSource = fs.readFileSync(path.join(root, "src/markerdeck-mdns.js"), "utf8");
+assert.match(mdnsNodeSource, /_markerdeck\._tcp\.local/,
+  "Node mDNS module must use the MarkerDeck DNS-SD type");
+const serverSource = fs.readFileSync(path.join(root, "src/markerdeck-server.js"), "utf8");
+assert.match(serverSource, /const MDNS_DISABLED = process\.env\.MARKERDECK_MDNS_DISABLED === "1"/,
+  "Server must centralize the mDNS disable flag");
+assert.match(serverSource, /disabled: MDNS_DISABLED/,
+  "Server mDNS publishing must honor the mDNS disable flag");
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+assert.ok(packageJson.dependencies?.["bonjour-service"],
+  "bonjour-service must be a production dependency");
+const packageLock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
+assert.ok(packageLock.packages?.["node_modules/bonjour-service"],
+  "package-lock.json must lock bonjour-service");
 
 const androidMainActivity = fs.readFileSync(
   path.join(root, "android/app/src/main/kotlin/com/andrower/markerdeck/MainActivity.kt"),
@@ -149,6 +178,8 @@ assert.match(
 
 const javascriptFiles = [
   "src/markerdeck-server.js",
+  "src/markerdeck-host-discovery.js",
+  "src/markerdeck-mdns.js",
   "desktop/electron/main.js",
   "desktop/electron/preload.js",
   ...screenAssets.filter((relativePath) => relativePath.endsWith(".js"))
@@ -172,6 +203,25 @@ assert.ok(
   electronServerResources.includes("markerdeck-host-discovery.js"),
   "Electron package must include the desktop host discovery module"
 );
+assert.ok(
+  electronServerResources.includes("markerdeck-mdns.js"),
+  "Electron package must include the desktop mDNS module"
+);
+const electronNodeModulesResource = electronPackage.build.extraResources
+  .find((resource) => resource.to === "server/node_modules");
+assert.ok(electronNodeModulesResource?.filter?.includes("**/*"),
+  "Electron package must include the complete Node production dependency tree");
+
+const macPackageScript = fs.readFileSync(path.join(root, "scripts/package-macos.sh"), "utf8");
+assert.match(macPackageScript, /node_modules\/bonjour-service\/package\.json/,
+  "macOS portable packaging must include bonjour-service");
+const windowsPackageScript = fs.readFileSync(path.join(root, "scripts/package-windows.ps1"), "utf8");
+assert.match(windowsPackageScript, /node_modules[\\/]bonjour-service[\\/]package\.json/,
+  "Windows portable packaging must include bonjour-service");
+const checkWorkflow = fs.readFileSync(path.join(root, ".github/workflows/check.yml"), "utf8");
+const releaseWorkflow = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
+assert.match(checkWorkflow, /npm ci/, "CI must install the locked Node dependencies");
+assert.match(releaseWorkflow, /npm ci --omit=dev/, "Release jobs must install production Node dependencies");
 
 const htmlFiles = [
   "src/web/markerdeck-screen.html",

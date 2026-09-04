@@ -8,6 +8,7 @@ const crypto = require("node:crypto");
 const dgram = require("node:dgram");
 const { spawn } = require("node:child_process");
 const { createMarkerDeckHostScanner } = require("./markerdeck-host-discovery");
+const { createMarkerDeckMdnsPublisher } = require("./markerdeck-mdns");
 const {
   DEFAULT_STATE,
   canonicalizeState,
@@ -28,11 +29,13 @@ const HOST_SCAN_TARGETS = String(process.env.MARKERDECK_HOST_SCAN_TARGETS || "")
   .map((value) => value.trim())
   .filter(Boolean);
 const DISCOVERY_NAME = String(process.env.MARKERDECK_DISCOVERY_NAME || "MarkerDeck").trim().slice(0, 40) || "MarkerDeck";
+const MDNS_DISABLED = process.env.MARKERDECK_MDNS_DISABLED === "1";
 const DISCOVERY_INSTANCE_ID = crypto.randomBytes(12).toString("hex");
 const hostScanner = createMarkerDeckHostScanner({
   discoveryPort: HOST_SCAN_PORT,
   selfInstanceId: DISCOVERY_INSTANCE_ID,
-  targets: HOST_SCAN_TARGETS
+  targets: HOST_SCAN_TARGETS,
+  mdnsDisabled: MDNS_DISABLED
 });
 const DISCOVERY_MAX_PACKET_SIZE = 4096;
 const ROOT = __dirname;
@@ -595,6 +598,8 @@ function getFormatBits(ecl, mask) {
 
 let server;
 let discoveryServer;
+let mdnsPublisher;
+let udpDiscoveryAvailable = false;
 
 function discoveryInfo(nonce = "") {
   const lanIp = getLanIp();
@@ -635,6 +640,7 @@ function startDiscoveryServer() {
   discoveryServer = dgram.createSocket({ type: "udp4", reuseAddr: true });
   discoveryServer.on("error", (error) => {
     console.error(`MarkerDeck UDP discovery unavailable: ${error.message}`);
+    udpDiscoveryAvailable = false;
     discoveryServer?.close();
     discoveryServer = undefined;
   });
@@ -647,6 +653,7 @@ function startDiscoveryServer() {
     });
   });
   discoveryServer.on("listening", () => {
+    udpDiscoveryAvailable = true;
     try {
       discoveryServer.addMembership(DISCOVERY_MULTICAST_ADDRESS);
     } catch (error) {
@@ -656,6 +663,40 @@ function startDiscoveryServer() {
     console.log(`MarkerDeck UDP discovery listening on ${address.address}:${address.port}`);
   });
   discoveryServer.bind(DISCOVERY_PORT, "0.0.0.0");
+}
+
+function startMdnsPublisher() {
+  mdnsPublisher = createMarkerDeckMdnsPublisher({
+    name: DISCOVERY_NAME,
+    port: PORT,
+    instanceId: DISCOVERY_INSTANCE_ID,
+    disabled: MDNS_DISABLED
+  });
+  mdnsPublisher.onError((error) => {
+    console.error(`MarkerDeck mDNS discovery unavailable: ${error.message}`);
+  });
+  if (!mdnsPublisher.start()) {
+    console.error("MarkerDeck mDNS discovery unavailable; continuing without mDNS publishing");
+  }
+}
+
+function stopDiscoveryServices() {
+  udpDiscoveryAvailable = false;
+  try { discoveryServer?.close(); } catch (_) {}
+  discoveryServer = undefined;
+  try { mdnsPublisher?.stop(); } catch (_) {}
+  mdnsPublisher = undefined;
+}
+
+function shutdownProcess() {
+  stopDiscoveryServices();
+  if (!server) {
+    process.exit(0);
+    return;
+  }
+  try { server.closeAllConnections?.(); } catch (_) {}
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1000).unref();
 }
 
 async function handler(req, res) {
@@ -691,7 +732,8 @@ async function handler(req, res) {
         videoExport: true,
         pngExport: true,
         sse: true,
-        udpDiscovery: true,
+        udpDiscovery: udpDiscoveryAvailable,
+        mdnsDiscovery: mdnsPublisher?.isAvailable() === true,
         hostDiscovery: true
       }
     }), "application/json; charset=utf-8");
@@ -730,6 +772,7 @@ async function handler(req, res) {
   if (url.pathname === "/api/shutdown" && req.method === "POST") {
     send(res, 200, JSON.stringify({ ok: true }), "application/json; charset=utf-8");
     setTimeout(() => {
+      stopDiscoveryServices();
       server.close(() => process.exit(0));
       setTimeout(() => process.exit(0), 1000).unref();
     }, 80).unref();
@@ -1083,6 +1126,7 @@ server = http.createServer((req, res) => {
 }).listen(PORT, "0.0.0.0", () => {
   const url = `http://${getLanIp()}:${PORT}${LAUNCH_PAGE}`;
   console.log(`MarkerDeck 视效标记屏控服务运行: ${url}`);
+  startMdnsPublisher();
 });
 
 startDiscoveryServer();
@@ -1099,3 +1143,6 @@ const eventHeartbeatTimer = setInterval(() => {
   });
 }, 15 * 1000);
 eventHeartbeatTimer.unref?.();
+
+process.once("SIGINT", shutdownProcess);
+process.once("SIGTERM", shutdownProcess);

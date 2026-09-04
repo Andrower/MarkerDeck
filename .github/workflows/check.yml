@@ -19,5 +19,8 @@ jobs:
         with:
           node-version: 24.14.0
 
+      - name: Install Node dependencies
+        run: npm ci
+
       - name: Run syntax and server tests
         run: npm run check

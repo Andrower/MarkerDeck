@@ -8,6 +8,9 @@ import android.net.wifi.WifiManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -20,51 +23,75 @@ import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.URLEncoder
 import java.security.SecureRandom
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 private const val DISCOVERY_SCAN_TIMEOUT_MS = 1_800L
+private const val DISCOVERY_MDNS_SCAN_TIMEOUT_MS = 1_400L
 private const val DISCOVERY_RECEIVE_TIMEOUT_MS = 250
 private const val DISCOVERY_CONNECT_TIMEOUT_MS = 600
 private const val DISCOVERY_READ_TIMEOUT_MS = 800
 private const val DISCOVERY_HTTP_BODY_LIMIT = 16 * 1024
+private const val DISCOVERY_MAX_CANDIDATES = 8
+private const val DISCOVERY_MAX_HTTP_VERIFICATIONS = 4
 
 class MarkerDeckDiscoveryScanner(
     context: Context,
     private val scope: CoroutineScope,
-    private val listener: Listener
+    private val listener: Listener,
+    private val selfInstanceIdProvider: () -> String = { "" }
 ) {
     interface Listener {
         fun onScanStarted()
         fun onHostDiscovered(host: DiscoveryHost)
         fun onScanFinished(status: DiscoveryScanStatus, message: String = "")
+
+        /** Keeps source compatibility for callers that do not need the scan trigger. */
+        fun onScanFinishedWithTrigger(
+            status: DiscoveryScanStatus,
+            message: String,
+            trigger: DiscoveryScanTrigger
+        ) = onScanFinished(status, message)
     }
 
     private val appContext = context.applicationContext
     private val connectivityManager =
         appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val wifiManager = appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    private val mdnsScanner = MarkerDeckMdnsScanner(appContext)
     private var scanJob: Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var started = false
-    private var refreshQueued = false
+    @Volatile private var started = false
+    @Volatile private var refreshQueued = false
+    @Volatile private var startupScanCompleted = false
+    private var pendingTrigger = DiscoveryScanTrigger.STARTUP
 
     fun start() {
         if (started) return
         started = true
+        startupScanCompleted = false
+        pendingTrigger = DiscoveryScanTrigger.STARTUP
         registerNetworkCallback()
         requestScan()
     }
 
     fun refresh() {
         if (!started) return
+        pendingTrigger = DiscoveryScanTrigger.USER_REFRESH
         requestScan()
     }
 
     fun stop() {
         started = false
         refreshQueued = false
+        startupScanCompleted = false
+        mdnsScanner.stop()
         scanJob?.cancel()
         scanJob = null
         networkCallback?.let { callback ->
@@ -92,39 +119,51 @@ class MarkerDeckDiscoveryScanner(
             connectivityManager.registerDefaultNetworkCallback(callback)
             networkCallback = callback
         } catch (_: RuntimeException) {
-            listener.onScanFinished(
+            listener.onScanFinishedWithTrigger(
                 DiscoveryScanStatus.UNAVAILABLE,
-                "无法监听网络变化，仍可手动刷新或输入地址。"
+                "无法监听网络变化，仍可手动刷新或输入地址。",
+                DiscoveryScanTrigger.NETWORK
             )
         }
     }
 
     private fun requestScanSoon() {
         if (!started || refreshQueued) return
+        if (!startupScanCompleted && scanJob?.isActive == true) return
         refreshQueued = true
         scope.launch {
             delay(250)
             refreshQueued = false
-            if (started) requestScan()
+            if (started) {
+                pendingTrigger = DiscoveryScanTrigger.NETWORK
+                requestScan()
+            }
         }
     }
 
     private fun requestScan() {
+        val trigger = pendingTrigger
+        pendingTrigger = DiscoveryScanTrigger.NETWORK
+        mdnsScanner.stop()
         scanJob?.cancel()
         scanJob = scope.launch {
             listener.onScanStarted()
             val networkState = activeLanNetworkState()
             if (!networkState.available) {
-                listener.onScanFinished(networkState.status, networkState.message)
+                if (trigger == DiscoveryScanTrigger.STARTUP) startupScanCompleted = true
+                listener.onScanFinishedWithTrigger(networkState.status, networkState.message, trigger)
                 return@launch
             }
             val discovered = withContext(Dispatchers.IO) {
                 scanOnce(networkState.network, networkState.usesWifi)
             }
             if (!isActive || !started) return@launch
+            if (trigger == DiscoveryScanTrigger.STARTUP) startupScanCompleted = true
             discovered.forEach(listener::onHostDiscovered)
-            listener.onScanFinished(
-                if (discovered.isEmpty()) DiscoveryScanStatus.EMPTY else DiscoveryScanStatus.FOUND
+            listener.onScanFinishedWithTrigger(
+                if (discovered.isEmpty()) DiscoveryScanStatus.EMPTY else DiscoveryScanStatus.FOUND,
+                "",
+                trigger
             )
         }
     }
@@ -160,8 +199,81 @@ class MarkerDeckDiscoveryScanner(
         }
     }
 
-    private fun scanOnce(network: Network?, usesWifi: Boolean): List<DiscoveryHost> {
+    private suspend fun scanOnce(network: Network?, usesWifi: Boolean): List<DiscoveryHost> {
         val nonce = newNonce()
+        val selfInstanceId = selfInstanceIdProvider().trim()
+        val mdnsRecords = Collections.synchronizedList(mutableListOf<MdnsDiscoveryRecord>())
+        val mdnsFinished = CountDownLatch(1)
+        val mdnsStarted = mdnsScanner.start(
+            timeoutMs = DISCOVERY_MDNS_SCAN_TIMEOUT_MS,
+            nextListener = object : MarkerDeckMdnsScanner.Listener {
+                override fun onRecord(record: MdnsDiscoveryRecord) {
+                    mdnsRecords += record
+                }
+
+                override fun onFinished() {
+                    mdnsFinished.countDown()
+                }
+            }
+        )
+        val multicastLock = acquireMulticastLock(usesWifi)
+        val udpCandidates = try {
+            scanUdpCandidates(network, nonce, selfInstanceId)
+        } finally {
+            multicastLock?.let {
+                if (it.isHeld) it.release()
+            }
+        }
+        if (mdnsStarted) {
+            try {
+                mdnsFinished.await(DISCOVERY_MDNS_SCAN_TIMEOUT_MS + 250L, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+
+        val candidates = LinkedHashMap<String, Candidate>()
+        udpCandidates.forEach { candidate ->
+            candidates.putIfAbsent(
+                "${candidate.host.instanceId}|${candidate.sourceAddress}|${candidate.host.port}",
+                candidate
+            )
+        }
+        mdnsRecords.toList().forEach { record ->
+            val host = validateMdnsCandidate(record, selfInstanceId) ?: return@forEach
+            candidates.putIfAbsent(
+                "${host.instanceId}|${record.sourceAddress}|${host.port}",
+                Candidate(host, record.sourceAddress)
+            )
+        }
+
+        val verified = coroutineScope {
+            candidates.values
+                .take(DISCOVERY_MAX_CANDIDATES)
+                .chunked(DISCOVERY_MAX_HTTP_VERIFICATIONS)
+                .flatMap { batch ->
+                    batch.map { candidate ->
+                        async(Dispatchers.IO) {
+                            val handshake = fetchAndParseHandshake(candidate.host, nonce) ?: return@async null
+                            if (!isDiscoveryResponseForCandidate(handshake, candidate.host)) return@async null
+                            validateDiscoveryResponse(
+                                response = handshake,
+                                expectedNonce = nonce,
+                                sourceAddress = candidate.sourceAddress,
+                                selfInstanceId = selfInstanceId
+                            )
+                        }
+                    }.awaitAll().filterNotNull()
+                }
+        }
+        return mergeDiscoveredHosts(emptyList(), verified)
+    }
+
+    private fun scanUdpCandidates(
+        network: Network?,
+        nonce: String,
+        selfInstanceId: String
+    ): List<Candidate> {
         val payload = JSONObject()
             .put("service", MARKERDECK_DISCOVERY_SERVICE)
             .put("protocolVersion", MARKERDECK_DISCOVERY_PROTOCOL_VERSION)
@@ -169,16 +281,13 @@ class MarkerDeckDiscoveryScanner(
             .put("nonce", nonce)
             .toString()
             .toByteArray(Charsets.UTF_8)
-        val hosts = mutableListOf<DiscoveryHost>()
-        val seenResponses = mutableSetOf<String>()
-        val multicastLock = acquireMulticastLock(usesWifi)
+        val candidates = LinkedHashMap<String, Candidate>()
         try {
             DatagramSocket().use { socket ->
                 network?.bindSocket(socket)
                 socket.broadcast = true
                 socket.soTimeout = DISCOVERY_RECEIVE_TIMEOUT_MS
-                val destinations = discoveryDestinations()
-                destinations.forEach { destination ->
+                discoveryDestinations().forEach { destination ->
                     socket.send(
                         DatagramPacket(
                             payload,
@@ -194,7 +303,7 @@ class MarkerDeckDiscoveryScanner(
                     val packet = DatagramPacket(buffer, buffer.size)
                     try {
                         socket.receive(packet)
-                    } catch (_: java.net.SocketTimeoutException) {
+                    } catch (_: SocketTimeoutException) {
                         continue
                     }
                     val sourceAddress = packet.address?.hostAddress ?: continue
@@ -202,30 +311,22 @@ class MarkerDeckDiscoveryScanner(
                         packet.data.copyOfRange(packet.offset, packet.offset + packet.length)
                             .toString(Charsets.UTF_8)
                     ) ?: continue
-                    val candidate = validateDiscoveryResponse(response, nonce, sourceAddress) ?: continue
-                    val responseKey = "${response.instanceId}|$sourceAddress|${response.port}"
-                    if (!seenResponses.add(responseKey)) continue
-                    val verifiedResponse = fetchAndParseHandshake(candidate, nonce) ?: continue
-                    if (!isDiscoveryResponseForCandidate(verifiedResponse, candidate)) continue
-                    val verifiedHost = validateDiscoveryResponse(
-                        verifiedResponse,
-                        expectedNonce = nonce,
-                        sourceAddress = sourceAddress
+                    val candidate = validateDiscoveryResponse(
+                        response,
+                        nonce,
+                        sourceAddress,
+                        selfInstanceId
                     ) ?: continue
-                    hosts.removeAll { it.identity == verifiedHost.identity }
-                    hosts += verifiedHost
+                    val responseKey = "${response.instanceId}|$sourceAddress|${response.port}"
+                    candidates.putIfAbsent(responseKey, Candidate(candidate, sourceAddress))
                 }
             }
-        } catch (_: java.net.SocketException) {
+        } catch (_: SocketException) {
             return emptyList()
         } catch (_: java.io.IOException) {
             return emptyList()
-        } finally {
-            multicastLock?.let {
-                if (it.isHeld) it.release()
-            }
         }
-        return mergeDiscoveredHosts(emptyList(), hosts)
+        return candidates.values.toList()
     }
 
     private fun acquireMulticastLock(usesWifi: Boolean): WifiManager.MulticastLock? {
@@ -313,6 +414,11 @@ class MarkerDeckDiscoveryScanner(
             android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
         )
     }
+
+    private data class Candidate(
+        val host: DiscoveryHost,
+        val sourceAddress: String
+    )
 
     private data class ActiveLanNetworkState(
         val available: Boolean,

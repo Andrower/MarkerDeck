@@ -1,6 +1,6 @@
 # MarkerDeck Android
 
-这是 MD-A09 Android Host MVP、MD-A10 Android 扫描二维码连接宿主、MD-A11 亮度与远程锁定延迟优化，以及 MD-A03 普通投放恢复、MD-A08 局域网宿主发现和 Android 投放紧急退出实现。它是一个单 Activity 原生薄壳：设置/模式页提供本地投放、连接局域网宿主、本机作为宿主三个入口。内置宿主使用 `connectedDevice` 前台服务保持后台网络连接；实现不包含设备管理、专用设备/Kiosk、Wake Lock 权限、精确闹钟、后台启动 Activity、辅助功能服务、overlay、root、隐藏 API 或绕过认证的机制。
+这是 MD-A09 Android Host MVP、MD-A10 Android 扫描二维码连接宿主、MD-A11 亮度与远程锁定延迟优化、MD-A14 mDNS 自动发现，以及 MD-A03 普通投放恢复、MD-A08 局域网宿主发现和 Android 投放紧急退出实现。它是一个单 Activity 原生薄壳：设置/模式页提供本地投放、连接局域网宿主、本机作为宿主三个入口。内置宿主使用 `connectedDevice` 前台服务保持后台网络连接；实现不包含设备管理、专用设备/Kiosk、Wake Lock 权限、精确闹钟、后台启动 Activity、辅助功能服务、overlay、root、隐藏 API 或绕过认证的机制。
 
 ## 网页静态资源复用边界
 
@@ -11,9 +11,17 @@ APK 的内置宿主通过 Gradle `assets` sourceSet 直接引用仓库 `src/web`
 - **本地投放**：启动只绑定 `127.0.0.1` 的内置 NanoHTTPD，加载 `http://127.0.0.1:<port>/markerdeck-screen.html?mode=local`，无需外部电脑即可显示和使用现有页面控制。
 - **本机作为宿主**：启动绑定 LAN 的内置前台服务并加载 localhost 控制页。控制页从 `/api/info` 获取本机 LAN 地址和 `/qr.svg`，同网浏览器/Android 被控端复用现有注册、状态、SSE、预设和锁命令协议。
 - **连接局域网宿主**：继续使用原地址、自动发现、设备名、普通 `display` WebView、屏幕恢复和三击临时退出入口流程。
-- **扫描二维码连接宿主**：服务地址旁提供“扫描二维码”按钮，使用 JourneyApps ZXing Embedded 的 `ScanContract` 和 MarkerDeck 自有 `MarkerDeckCaptureActivity`；只有用户点击按钮后才检查并请求相机权限。扫描 Activity 在 Manifest 中使用 `sensorPortrait` 并由 `ScanOptions` 锁定方向，允许正反竖屏但不会跟随传感器进入横屏；该限制只作用于扫码，不改变投放 WebView、本地投放或宿主控制页的横竖屏行为。成功读取的启动页、控制端、投放端 URL 或裸 IP/IP:端口会归一化为 HTTP(S) 服务 origin 填入地址框，取消、拒绝、无相机、不可识别内容和扫描器异常均显示状态且保留原输入。扫描不会自动连接，仍需用户点击“连接并开始投放”。
+- **扫描二维码连接宿主**：服务地址旁提供“扫描二维码”按钮，使用 JourneyApps ZXing Embedded 的 `ScanContract` 和 MarkerDeck 自有 `MarkerDeckCaptureActivity`；只有用户点击按钮后才检查并请求相机权限。扫描 Activity 在 Manifest 中使用 `sensorPortrait` 并由 `ScanOptions` 锁定方向，允许正反竖屏但不会跟随传感器进入横屏；该限制只作用于扫码，不改变投放 WebView、本地投放或宿主控制页的横竖屏行为。成功读取的启动页、控制端、投放端 URL 或裸 IP/IP:端口会归一化为 HTTP(S) 服务 origin，先询问宿主连接，再确认设备名称后进入投放；取消、拒绝、无相机、不可识别内容和扫描器异常均显示状态且不保存配置。
 - **能力边界**：Android `/api/info` 宣布 `videoExport: false`，网页隐藏视频导出；没有 FFmpeg/MP4 导出。桌面 Node 服务保持视频能力。
 - **生命周期与停止**：宿主启动后由 `MarkerDeckHostService` 以前台服务方式保持，返回桌面、锁屏、切换应用、Activity `onStop`/`onDestroy` 或从最近任务移除均不会主动停止。设置首页显示运行状态/地址并提供“停止内置宿主服务”，常驻通知也提供“停止服务”；Android 13 以上首次成功启动宿主后会请求一次通知权限，拒绝不会阻止服务运行，但通知栏入口可能不可见。显式停止、切换到远程宿主、普通本地投放退出和 `/api/shutdown` 会清理 HTTP、SSE、UDP responder、多播锁及通知。系统强制停止应用、设备关机或 OEM 强制终止进程仍会停止服务；系统允许 `START_STICKY` 恢复时会按已保存的宿主模式重新启动。
+
+## MD-A14 mDNS 自动发现与启动询问
+
+- Android 使用系统 `NsdManager` 发布/浏览 `_markerdeck._tcp`；这是 Android API 对 `_markerdeck._tcp.local` 的服务类型写法。发布 TXT 包含 `service=markerdeck`、`protocolVersion=1`、`instanceId` 和安全显示名。一次前台宿主会话只生成一个 instanceId，并由 HTTP host、UDP responder、mDNS publisher 共享。
+- 设置页默认打开时同时执行有界的 NsdManager 与 UDP 扫描，mDNS resolve 最多三个并发；刷新、停止扫描、网络变化、Activity 暂停/销毁会注销监听并忽略旧回调。候选先做纯逻辑校验，再访问观测地址的 `/api/discovery?nonce=...`，通过后才进入列表。
+- 单宿主发现后先显示简洁的“是否连接”询问；多个宿主显示可选择列表，不会擅自连接。确认后复用宿主确认、设备命名和普通 `display` 投放入口；拒绝或没有宿主继续显示现有模式选择页。一次启动会话中同一宿主只提示一次，刷新或用户主动扫描可再次选择。
+- 自动提示只在设置页可交互且系统锁屏权限引导、扫码确认和 Activity 生命周期没有占用窗口时显示。mDNS 不可用或被路由器隔离时，UDP 和手动地址仍可用。
+- Node 与 Android `/api/info` 均保留 `udpDiscovery` 并增加准确的 `mdnsDiscovery`；Android APK 不包含 Node.js、FFmpeg 或 bonjour-service。
 
 内置服务 API 见 `AndroidHostServer.kt`，包括静态资源、`/api/info`、`/api/discovery`、`/qr.svg`、`/api/register`、`/api/devices`、`/api/state`、`/api/events`、预设、设备设置/清理、设备名称/分组、锁定/ACK 和 `/api/shutdown`。HTTP 状态为进程内，预设与宿主设置使用 SharedPreferences 持久化。
 
@@ -89,7 +97,7 @@ git diff --check
 
 ## A02 行为
 
-- 首次打开只显示设置页；在 Activity 位于前台且有 Wi-Fi/有线局域网时，设置页会执行有界的 MarkerDeck 宿主发现，但不会自动进入投放 WebView。
+- 首次打开显示设置页；在 Activity 位于前台且有 Wi-Fi/有线局域网时，设置页会执行有界的 MarkerDeck 宿主发现。发现宿主后只询问是否连接，不会未经确认进入投放 WebView；拒绝或无结果继续保留模式选择页。
 - 用户填写服务地址和设备名并点击“连接并开始投放”后，地址才会验证、写入 DataStore，并加载 `/markerdeck-screen.html?mode=display`。
 - 地址接受完整的 `http://`/`https://` 地址，也接受 `192.168.1.2`、`192.168.1.2:8765`、`localhost:8765` 等无 scheme 输入；无 scheme 时自动补 `http://`，必须有主机名或 IP，端口必须为 `1..65535`。路径、查询和片段会被丢弃并归一化为 origin。IPv6 使用方括号保持正确 URL 结构。
 - 扫描二维码只接受同一地址规则能归一化的 HTTP(S) 主机内容：`markerdeck-launch.html`、`markerdeck-screen.html?mode=control`、`markerdeck-screen.html?mode=display`、`/control`、`/display` 等完整 URL，以及裸 IP/IP:端口。`javascript:`, `file:`, `ftp:`、空内容、无主机和非法端口会被拒绝；路径、查询和片段不会写入服务地址字段。自有扫描 Activity 使用 `sensorPortrait` 且 `exported=false`，方向配置不会外溢到普通投放或宿主控制 Activity。
@@ -107,9 +115,9 @@ git diff --check
 ## MD-A08 局域网宿主发现
 
 - 服务端在固定 UDP `8766` 端口监听版本化的 `markerdeck` JSON 请求，同时保留现有 HTTP 端口（默认 `8765`）。请求包含随机 nonce；响应包含协议版本、名称、HTTP 端口、HTTP 地址、实例 ID 和同一 nonce，并通过 UDP 单播返回请求端。
-- Android 只在当前 Wi-Fi 或以太网可用时扫描，发送全局/定向 IPv4 广播和 `239.255.77.77` 多播，扫描窗口约 `1.8` 秒；Wi-Fi 扫描期间短暂持有 `MulticastLock`，Activity 离开设置页、暂停或销毁时取消扫描和网络回调。不会做端口扫描、公网发现或后台持续扫描。
+- Android 只在当前 Wi-Fi 或以太网可用时扫描，mDNS 与 UDP 同时运行；UDP 仍发送全局/定向 IPv4 广播和 `239.255.77.77` 多播，扫描窗口约 `1.8` 秒；Wi-Fi 扫描期间短暂持有 `MulticastLock`，Activity 离开设置页、暂停或销毁时取消扫描和网络回调。不会做端口扫描、公网发现或后台持续扫描。
 - 收到 UDP 候选后，Android 只访问候选源地址的 `GET /api/discovery?nonce=...` 完成 HTTP 握手，并校验 nonce、服务名、协议版本、响应类型、实例 ID、端口、HTTP origin 和局域网 IPv4。最终导航地址使用已验证的 UDP 对端地址；广播内容本身不是认证凭据，nonce 只是请求关联值，局域网内仍应配合现有 URL 校验和 cleartext LAN 边界。
-- 一个宿主且地址字段为空时只自动填入建议，不覆盖用户正在编辑或已有的地址；多个宿主显示为可点击列表，手动刷新和手动输入始终保留。网络切换会触发新的有界扫描，发现失败时回退到手动输入。
+- 启动扫描发现一个宿主时先询问是否连接，多个宿主显示为可点击列表；确认后才进入设备命名和投放。拒绝、无结果、网络切换或发现失败均回退到手动输入；同一启动会话不重复提示同一宿主，手动刷新可再次选择，不覆盖用户正在编辑的地址。
 
 ## A03 P0 行为与限制
 
@@ -140,10 +148,10 @@ P0 目标是系统向 Activity 交付 resume/screen-on 回调后，目标在 `<=
 
 在有 Android 设备或模拟器时，安装 `app-debug.apk` 后检查：
 
-- 首次启动没有连接投放提示或网页设备名对话框；设置页字段可见且不重叠。若设备有局域网，发现状态和刷新按钮可见。
+- 首次启动在没有可信宿主时只显示设置/模式页；若发现宿主，确认启动提示、设备命名对话框和设置页字段不重叠。若设备有局域网，发现状态和刷新按钮可见。
 - 输入空值、`ftp://`、无主机、端口 `0`、端口 `65536`，确认错误可见且不会进入 WebView；输入裸 IP、`IP:端口` 和 `localhost:端口`，确认自动补 `http://`。
-- 在服务地址旁点击“扫描二维码”，确认首次点击才请求相机权限；用启动页、控制端、投放端 URL、带 query 的 URL 和裸 IP/IP:端口测试归一化结果，用 `javascript:`, `file:`, `ftp:`、空内容测试拒绝；取消扫码、拒绝权限、无相机或相机异常时确认状态可读且原地址未改变。扫描成功后确认仍停留设置页，必须手动点击“连接并开始投放”。
-- 在同一局域网启动服务端，确认一个宿主会自动填入空地址；启动多个服务端，确认列表可选择且不会覆盖已有/正在编辑的地址；切换网络或离开设置页后确认扫描停止，返回后可刷新。
+- 在服务地址旁点击“扫描二维码”，确认首次点击才请求相机权限；用启动页、控制端、投放端 URL、带 query 的 URL 和裸 IP/IP:端口测试归一化结果，用 `javascript:`, `file:`, `ftp:`、空内容测试拒绝；取消扫码、拒绝权限、无相机或相机异常时确认状态可读且原地址未改变。扫描成功后确认宿主连接和设备名称均需明确确认，取消不保存配置。
+- 在同一局域网启动服务端，确认启动时先询问连接；启动多个服务端，确认弹出可选择列表且不会擅自连接或覆盖正在编辑的地址；切换网络或离开设置页后确认扫描停止，返回后可刷新并再次选择。
 - 输入可访问的 `http://` MarkerDeck 服务、设备名，点击连接，确认页面进入全屏、保持常亮、窗口亮度为 100%，服务端设备列表显示该名称；调整总体亮度后确认画面、缩略图和导出一致。
 - 分别启动本地投放和本机作为宿主，确认设置首页的内置宿主状态显示“运行中”和地址；点击“停止内置宿主服务”后停留在设置页并显示“已停止”，远程宿主地址和发现列表不被清除。
 - 在本机作为宿主时返回设置、回到桌面、锁屏和切换应用，使用同网设备确认服务地址仍可访问；重新打开应用后确认宿主仍显示运行中。分别从设置页和常驻通知点击停止，确认 HTTP、SSE、UDP responder、多播锁及通知均被清理。

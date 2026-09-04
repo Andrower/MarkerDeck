@@ -20,7 +20,10 @@ data class EmbeddedHostSession(
     val url: String,
     val port: Int,
     val lanAddress: String,
-    val discoveryAvailable: Boolean
+    val discoveryAvailable: Boolean,
+    val instanceId: String = "",
+    val udpDiscoveryAvailable: Boolean = discoveryAvailable,
+    val mdnsDiscoveryAvailable: Boolean = false
 )
 
 enum class EmbeddedHostServiceState {

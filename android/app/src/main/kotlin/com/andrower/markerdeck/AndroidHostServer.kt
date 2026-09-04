@@ -14,7 +14,8 @@ class AndroidHostServer(
     private val assetReader: (String) -> ByteArray?,
     private val ipProvider: () -> String,
     private val capabilitiesProvider: () -> HostCapabilities = { HostCapabilities() },
-    private val onShutdownRequested: () -> Unit = {}
+    private val onShutdownRequested: () -> Unit = {},
+    private val instanceId: String = java.util.UUID.randomUUID().toString().replace("-", "")
 ) : NanoHTTPD(bindAddress, requestedPort) {
     private class BadRequest(message: String) : RuntimeException(message)
 
@@ -465,7 +466,6 @@ class AndroidHostServer(
         addHeader("Access-Control-Allow-Headers", "content-type")
     }
 
-    private val instanceId: String = java.util.UUID.randomUUID().toString().replace("-", "")
 }
 
 private fun JSONObject.putAll(values: JSONObject): JSONObject {

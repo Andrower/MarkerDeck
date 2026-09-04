@@ -3,6 +3,7 @@ package com.andrower.markerdeck
 import android.content.Context
 import android.net.wifi.WifiManager
 import java.io.IOException
+import java.util.UUID
 
 class HostLifecycleController(
     context: Context,
@@ -14,6 +15,9 @@ class HostLifecycleController(
     private var server: AndroidHostServer? = null
     private var sseHub: MarkerDeckHostSseHub? = null
     private var udpResponder: MarkerDeckHostUdpResponder? = null
+    private var mdnsPublisher: MarkerDeckMdnsPublisher? = null
+    private var udpDiscoveryAvailable = false
+    private var mdnsDiscoveryAvailable = false
     private var multicastLock: WifiManager.MulticastLock? = null
     private var session: EmbeddedHostSession? = null
 
@@ -24,12 +28,13 @@ class HostLifecycleController(
     fun start(mode: EmbeddedHostMode, requestedHostName: String = hostName()): EmbeddedHostSession {
         stopLocked()
         store.setHostName(requestedHostName)
+        val instanceId = UUID.randomUUID().toString().replace("-", "")
 
         val bindAddress = if (mode == EmbeddedHostMode.LOCAL_PROJECTION) "127.0.0.1" else "0.0.0.0"
         val preferredPort = if (mode == EmbeddedHostMode.LOCAL_PROJECTION) 0 else MARKERDECK_HOST_DEFAULT_PORT
         val nextSseHub = MarkerDeckHostSseHub()
         var activeSseHub = nextSseHub
-        val nextServer = createServer(mode, bindAddress, preferredPort, nextSseHub)
+        val nextServer = createServer(mode, bindAddress, preferredPort, nextSseHub, instanceId)
         val actualServer = try {
             startAndWait(nextServer)
             nextServer
@@ -40,7 +45,7 @@ class HostLifecycleController(
                 throw error
             }
             val fallbackHub = MarkerDeckHostSseHub()
-            val fallbackServer = createServer(mode, bindAddress, 0, fallbackHub)
+            val fallbackServer = createServer(mode, bindAddress, 0, fallbackHub, instanceId)
             try {
                 startAndWait(fallbackServer)
                 nextSseHub.close()
@@ -67,6 +72,11 @@ class HostLifecycleController(
             MarkerDeckHostNetworkAddress.findLanIpv4()
         }
         val origin = normalizeServiceAddress("http://127.0.0.1:$port")
+        val availability = if (mode == EmbeddedHostMode.LAN_HOST) {
+            startDiscovery(actualServer, instanceId)
+        } else {
+            DiscoveryAvailability()
+        }
         val nextSession = EmbeddedHostSession(
             mode = mode,
             origin = origin,
@@ -77,12 +87,16 @@ class HostLifecycleController(
             },
             port = port,
             lanAddress = hostIp,
-            discoveryAvailable = if (mode == EmbeddedHostMode.LAN_HOST) startDiscovery(actualServer) else false
+            discoveryAvailable = availability.udp || availability.mdns,
+            instanceId = instanceId,
+            udpDiscoveryAvailable = availability.udp,
+            mdnsDiscoveryAvailable = availability.mdns
         )
         server = actualServer
         if (sseHub == null) sseHub = activeSseHub
         session = nextSession
-        return nextSession
+        updateSessionDiscoveryAvailability()
+        return session ?: nextSession
     }
 
     @Synchronized
@@ -100,7 +114,8 @@ class HostLifecycleController(
         mode: EmbeddedHostMode,
         bindAddress: String,
         port: Int,
-        nextSseHub: MarkerDeckHostSseHub
+        nextSseHub: MarkerDeckHostSseHub,
+        instanceId: String
     ): AndroidHostServer = AndroidHostServer(
         bindAddress = bindAddress,
         requestedPort = port,
@@ -113,6 +128,14 @@ class HostLifecycleController(
             if (mode == EmbeddedHostMode.LOCAL_PROJECTION) "127.0.0.1"
             else MarkerDeckHostNetworkAddress.findLanIpv4()
         },
+        capabilitiesProvider = {
+            HostCapabilities(
+                udpDiscovery = udpDiscoveryAvailable,
+                mdnsDiscovery = mdnsDiscoveryAvailable,
+                hostDiscovery = false
+            )
+        },
+        instanceId = instanceId,
         onShutdownRequested = {
             stop()
             onShutdownRequested()
@@ -133,19 +156,63 @@ class HostLifecycleController(
         throw IOException("Embedded host did not start")
     }
 
-    private fun startDiscovery(nextServer: AndroidHostServer): Boolean {
+    private fun startDiscovery(
+        nextServer: AndroidHostServer,
+        instanceId: String
+    ): DiscoveryAvailability {
         acquireMulticastLock()
         val responder = MarkerDeckHostUdpResponder(
             httpPort = { nextServer.getListeningPort() },
             hostIp = { MarkerDeckHostNetworkAddress.findLanIpv4() },
-            hostName = { store.hostSettings().hostName }
+            hostName = { store.hostSettings().hostName },
+            instanceId = instanceId
         )
-        if (!responder.start()) {
-            releaseMulticastLock()
-            return false
+        if (responder.start()) {
+            udpResponder = responder
+            udpDiscoveryAvailable = true
         }
-        udpResponder = responder
-        return true
+
+        lateinit var nextPublisher: MarkerDeckMdnsPublisher
+        nextPublisher = MarkerDeckMdnsPublisher(
+            context = appContext,
+            hostName = { store.hostSettings().hostName },
+            httpPort = { nextServer.getListeningPort() },
+            instanceId = instanceId,
+            onAvailabilityChanged = { available ->
+                synchronized(this) {
+                    if (mdnsPublisher === nextPublisher) {
+                        mdnsDiscoveryAvailable = available
+                        updateSessionDiscoveryAvailability()
+                        if (shouldReleaseMulticastLock(
+                                udpDiscoveryAvailable = udpDiscoveryAvailable,
+                                mdnsDiscoveryAvailable = mdnsDiscoveryAvailable,
+                                mdnsRegistrationAccepted = available
+                            )
+                        ) {
+                            releaseMulticastLock()
+                        }
+                    }
+                }
+            }
+        )
+        mdnsPublisher = nextPublisher
+        val mdnsStarted = nextPublisher.start()
+        if (shouldReleaseMulticastLock(
+                udpDiscoveryAvailable = udpDiscoveryAvailable,
+                mdnsDiscoveryAvailable = mdnsDiscoveryAvailable,
+                mdnsRegistrationAccepted = mdnsStarted
+            )
+        ) {
+            releaseMulticastLock()
+        }
+        if (!mdnsStarted && !udpDiscoveryAvailable) {
+            nextPublisher.stop()
+            mdnsPublisher = null
+        }
+        return DiscoveryAvailability(
+            udp = udpDiscoveryAvailable,
+            mdns = mdnsDiscoveryAvailable
+        )
     }
 
     private fun acquireMulticastLock() {
@@ -164,8 +231,12 @@ class HostLifecycleController(
     }
 
     private fun stopLocked() {
+        mdnsPublisher?.stop()
+        mdnsPublisher = null
+        mdnsDiscoveryAvailable = false
         udpResponder?.stop()
         udpResponder = null
+        udpDiscoveryAvailable = false
         releaseMulticastLock()
         sseHub?.close()
         sseHub = null
@@ -173,4 +244,24 @@ class HostLifecycleController(
         server = null
         session = null
     }
+
+    private fun updateSessionDiscoveryAvailability() {
+        val current = session ?: return
+        session = current.copy(
+            discoveryAvailable = udpDiscoveryAvailable || mdnsDiscoveryAvailable,
+            udpDiscoveryAvailable = udpDiscoveryAvailable,
+            mdnsDiscoveryAvailable = mdnsDiscoveryAvailable
+        )
+    }
+
+    private data class DiscoveryAvailability(
+        val udp: Boolean = false,
+        val mdns: Boolean = false
+    )
 }
+
+internal fun shouldReleaseMulticastLock(
+    udpDiscoveryAvailable: Boolean,
+    mdnsDiscoveryAvailable: Boolean,
+    mdnsRegistrationAccepted: Boolean
+): Boolean = !udpDiscoveryAvailable && !mdnsDiscoveryAvailable && !mdnsRegistrationAccepted

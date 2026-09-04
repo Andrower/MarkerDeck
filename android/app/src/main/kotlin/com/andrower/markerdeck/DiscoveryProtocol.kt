@@ -11,6 +11,11 @@ const val MARKERDECK_DISCOVERY_RESPONSE_TYPE = "response"
 const val MARKERDECK_DISCOVERY_PORT = 8766
 const val MARKERDECK_DISCOVERY_MULTICAST_ADDRESS = "239.255.77.77"
 const val MARKERDECK_DISCOVERY_MAX_NAME_LENGTH = 40
+// Android NSD omits the implicit .local suffix; the full DNS-SD type is kept for validation.
+const val MARKERDECK_MDNS_SERVICE_TYPE = "_markerdeck._tcp.local"
+const val MARKERDECK_MDNS_NSD_SERVICE_TYPE = "_markerdeck._tcp"
+const val MARKERDECK_MDNS_PROTOCOL = "tcp"
+const val MARKERDECK_MDNS_SERVICE = "markerdeck"
 
 data class DiscoveryAdvertisement(
     val service: String,
@@ -53,6 +58,41 @@ data class DiscoveryUiState(
     val message: String = ""
 )
 
+/** Validates untrusted NSD TXT data and builds an origin from the resolved peer address. */
+fun validateMdnsCandidate(
+    record: MdnsDiscoveryRecord,
+    selfInstanceId: String = ""
+): DiscoveryHost? {
+    val normalizedType = normalizeMdnsServiceType(record.serviceType)
+    val service = record.txt["service"]?.trim()
+    val protocolVersion = record.txt["protocolVersion"]?.trim()
+    val instanceId = record.txt["instanceId"]?.trim()
+    val name = (record.txt["name"] ?: record.serviceName).trim()
+    val sourceAddress = record.sourceAddress.trim().replaceFirst(
+        Regex("^::ffff:", RegexOption.IGNORE_CASE),
+        ""
+    )
+    if (normalizedType != MARKERDECK_MDNS_SERVICE_TYPE ||
+        service != MARKERDECK_MDNS_SERVICE ||
+        protocolVersion != MARKERDECK_DISCOVERY_PROTOCOL_VERSION.toString() ||
+        instanceId.isNullOrEmpty() ||
+        !instanceId.matches(DISCOVERY_INSTANCE_PATTERN) ||
+        instanceId == selfInstanceId ||
+        !isSafeDiscoveryText(name, MARKERDECK_DISCOVERY_MAX_NAME_LENGTH) ||
+        record.port !in 1..65535 ||
+        !isLanIpv4Address(sourceAddress)
+    ) return null
+
+    val serviceAddress = "http://$sourceAddress:${record.port}"
+    return DiscoveryHost(
+        instanceId = instanceId,
+        name = name,
+        serviceAddress = serviceAddress,
+        port = record.port,
+        advertisedHttpUrl = serviceAddress
+    )
+}
+
 /** Parses only the fields used by the versioned discovery protocol. */
 fun parseDiscoveryAdvertisement(payload: String): DiscoveryAdvertisement? = try {
     val json = JSONObject(payload)
@@ -77,7 +117,8 @@ fun parseDiscoveryAdvertisement(payload: String): DiscoveryAdvertisement? = try 
 fun validateDiscoveryResponse(
     response: DiscoveryAdvertisement,
     expectedNonce: String,
-    sourceAddress: String
+    sourceAddress: String,
+    selfInstanceId: String = ""
 ): DiscoveryHost? {
     if (!expectedNonce.matches(DISCOVERY_NONCE_PATTERN)) return null
     if (response.service != MARKERDECK_DISCOVERY_SERVICE ||
@@ -87,6 +128,7 @@ fun validateDiscoveryResponse(
     ) return null
     if (!isSafeDiscoveryText(response.name, MARKERDECK_DISCOVERY_MAX_NAME_LENGTH) ||
         !response.instanceId.matches(DISCOVERY_INSTANCE_PATTERN) ||
+        response.instanceId == selfInstanceId ||
         response.port !in 1..65535
     ) return null
     if (!isLanIpv4Address(sourceAddress)) return null
@@ -173,7 +215,12 @@ fun mergeDiscoveryUiState(
 }
 
 private val DISCOVERY_NONCE_PATTERN = Regex("^[A-Za-z0-9_-]{8,80}$")
-private val DISCOVERY_INSTANCE_PATTERN = Regex("^[A-Za-z0-9_-]{8,80}$")
+internal val DISCOVERY_INSTANCE_PATTERN = Regex("^[A-Za-z0-9_-]{8,80}$")
+
+fun normalizeMdnsServiceType(value: String): String {
+    val serviceType = value.trim().trimEnd('.')
+    return if (serviceType.endsWith(".local")) serviceType else "$serviceType.local"
+}
 
 private fun isSafeDiscoveryText(value: String, maxLength: Int): Boolean =
     value.isNotBlank() && value.length <= maxLength && value.none { it.isISOControl() }
@@ -186,6 +233,7 @@ private fun isLanIpv4Address(value: String): Boolean {
     val numbers = octets.map { it.toIntOrNull() ?: return false }
     if (numbers.any { it !in 0..255 }) return false
     return when {
+        numbers[0] == 127 -> true
         numbers[0] == 10 -> true
         numbers[0] == 172 && numbers[1] in 16..31 -> true
         numbers[0] == 192 && numbers[1] == 168 -> true
@@ -193,3 +241,11 @@ private fun isLanIpv4Address(value: String): Boolean {
         else -> false
     }
 }
+
+data class MdnsDiscoveryRecord(
+    val serviceType: String,
+    val serviceName: String,
+    val port: Int,
+    val sourceAddress: String,
+    val txt: Map<String, String>
+)

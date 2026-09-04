@@ -28,7 +28,15 @@
         "filter": [
           "markerdeck-server.js",
           "markerdeck-host-discovery.js",
+          "markerdeck-mdns.js",
           "web/**"
+        ]
+      },
+      {
+        "from": "../../node_modules",
+        "to": "server/node_modules",
+        "filter": [
+          "**/*"
         ]
       },
       {
