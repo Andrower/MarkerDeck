@@ -212,13 +212,16 @@
 
 #### MD-A16 远程锁定与 Android 移动宿主响应优化
 
-状态：共享网页快速 ACK、Node/Android devices 去抖、Android 有界隔离 SSE 队列已实现；真机失败进一步定位为 NanoHTTPD 对 Chromium SSE 自动启用 gzip，禁用 SSE gzip 和控制端状态单调合并补丁已通过 Node、Android JVM、Lint 和 debug 构建门禁。新 APK USB/Android LAN Host、多投放端和慢客户端复测待完成。
+状态：共享网页快速 ACK、Node/Android devices 去抖、Android 有界隔离 SSE 队列已实现；真机失败进一步定位为 NanoHTTPD 对 Chromium SSE 自动启用 gzip。禁用 SSE gzip 和控制端状态单调合并补丁已通过 Node、Android JVM、Lint、debug 构建及 Android LAN Host 单页/双页闭环验收。慢客户端现场灌满 TCP 发送缓冲区的验证未执行。
 
 - **现场基线**：Node 同机控制/投放 Playwright 可见锁定通常 `10-23ms`、峰值 `66ms`。Android 的 `connected` 原始 curl 证据约 `6ms` 可见，但建连后等待 `1s` 再 POST 的 targeted lock event 曾约下一秒才出现；一次浏览器解锁到投放页 body 状态改变约 `1367ms`，控制端先显示未响应，随后由 `1.5s` register fallback 更新。`EventSource.readyState=1` 不作为事件及时到达证明。
 - **投放端 ACK**：远程命令先同步应用 DOM/canvas/native 可见状态，只有应用成功才 ACK；Fullscreen、wake lock、状态 publish 等慢副作用并行完成。本地用户 Fullscreen、Android/Electron bridge、三击解锁、命令去重和 lock baseline 保持不变。
 - **Android SSE**：移除请求线程按客户端写 `PipedOutputStream` 的耦合，改为每客户端 `64` 条/`256KiB` 有界队列型 InputStream；入队不等待 socket，超限客户端断开并由 EventSource 重连。真机 Playwright response headers 确认 Chromium 协商到 gzip，而 NanoHTTPD 默认压缩全部 `text/*`，`GZIPOutputStream` 因小型无限流块而延迟输出；Android Host 现仅对 `text/event-stream` 禁用 gzip，其他响应保留默认行为，不加入 padding。
 - **设备 fanout**：Node/Android 的 lock-ack 事件立即发送；设备状态继续更新并持久化，devices 事件在 `60ms` 窗口内合并，最终控制端仍完整 GET `/api/devices`。普通注册、离线清理、状态更新路径不删除。
-- **自动化与剩余现场**：Node/网页测试覆盖快速 ACK、慢副作用、同 command ID 状态不回退、连续 SSE event、target session、ACK 即时与设备刷新合并；Android 真实 NanoHTTPD HTTP 测试携带 `Accept-Encoding: gzip`，断言 SSE 不压缩且 connected、连续 command/ACK 可立即读取，同时验证普通 JSON 仍可 gzip。仍需新 APK 的 USB/`192.168.0.137:8765` 浏览器闭环、多设备/慢客户端和不同网络复测。
+- **自动化**：`npm run check` 为 `50/50` 通过；Android `:app:test :app:lintDebug :app:assembleDebug` 全部通过。Node/网页测试覆盖快速 ACK、慢副作用、同 command ID 状态不回退、连续 SSE event、target session、ACK 即时与设备刷新合并；Android 真实 NanoHTTPD HTTP 测试携带 `Accept-Encoding: gzip`，断言 SSE 不压缩且 connected、连续 command/ACK 可立即读取，同时验证普通 JSON 仍可 gzip。
+- **Android LAN Host 验收**：修复后的 APK 已 root 覆盖安装到 `192.168.0.137:8765`。携带 `Accept-Encoding: gzip` 的 `/api/events` 响应不含 `Content-Encoding` 且 connected 立即返回；单投放页连续 `20` 次锁定/解锁 `20/20` 成功，visible 延迟为 `16-137ms`、平均 `39ms`、P95 `74ms`，ACK 为 `32-184ms`、平均 `63ms`、P95 `166ms`，最终为“解锁确认 1/1”。
+- **双页与 fanout 验收**：同一物理设备两个投放页面折叠并同时选中后，连续 `10` 次批量锁定/解锁 `10/10` 成功，visible 最大 `106ms`、ACK 最大 `130ms`，最终为“解锁确认 2/2”；两个并行 curl control SSE 均收到 initial 与 completed 两个 `lock-ack`。
+- **未验证范围**：慢客户端内存背压、队列上限和清理由 Android JVM 单元测试覆盖；未在真实 LAN 环境中暂停读取并灌满 TCP 发送缓冲区，不声称现场 socket 背压隔离已通过。
 - **依赖**：MD-A15；沿用现有 SSE/状态/发现协议和 fallback 语义，详细记录见 `docs/tasks/MD-A16.md`。
 
 ### 5. 关键门禁与共同验收

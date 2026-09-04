@@ -2,7 +2,7 @@
 
 ## 状态
 
-代码、Node/网页测试、Android JVM/HTTP 集成测试、Lint 和 debug 构建门禁已完成。真机验收进一步定位到 Android NanoHTTPD 对 SSE 自动启用 gzip；禁用 SSE gzip 和控制端 ACK 状态单调合并的补丁已通过完整自动化门禁。Android LAN Host `192.168.0.137:8765` 的失败证据保留，新 APK 的 USB/浏览器和多投放端现场复测仍待完成，不提前写成已通过。
+代码、Node/网页测试、Android JVM/HTTP 集成测试、Lint 和 debug 构建门禁已完成。真机验收进一步定位到 Android NanoHTTPD 对 SSE 自动启用 gzip；禁用 SSE gzip 和控制端 ACK 状态单调合并的补丁已通过完整自动化门禁。修复后的 APK 已通过 root 覆盖安装到 Android LAN Host `192.168.0.137:8765`，单投放页和同一物理设备双投放页闭环均已通过。慢客户端内存背压、队列上限和清理由单元测试覆盖；现场灌满 TCP 发送缓冲区的验证未执行。
 
 ## 基线与定位
 
@@ -47,7 +47,7 @@
 - Android `HostSseHubTest` 验证 connected/连续 payload 入队后立即可读、队列上限触发关闭和清理、慢客户端不阻塞其他客户端、去抖合并与立即 flush。
 - Android `AndroidHostServerTest` 通过真实 NanoHTTPD/`HttpURLConnection` 并显式发送 `Accept-Encoding: gzip`，验证 SSE 响应不含 `Content-Encoding: gzip`，connected、连续 targeted lock events 和完成态 control lock ACK 可立即读取；普通 JSON 响应仍保留 gzip。
 
-本次收尾执行：
+自动化门禁记录：
 
 ```text
 npm run check
@@ -57,10 +57,15 @@ ANDROID_HOME=/Users/andrower/Library/Android/sdk \
 git diff --check
 ```
 
-gzip 根因修复后，Node `npm run check` 为 `50/50` 通过；Android `:app:test :app:lintDebug :app:assembleDebug` 为 `BUILD SUCCESSFUL`。`git diff --check` 在追加提交前执行。
+gzip 根因修复后，Node `npm run check` 为 `50/50` 通过；Android `:app:test :app:lintDebug :app:assembleDebug` 全部通过。
 
-## 剩余现场验证
+## 真机与 LAN 验收
 
-- 将修复后的 APK 覆盖安装到 Android Host `192.168.0.137:8765`，通过 Playwright 确认 SSE response 不再出现 `content-encoding: gzip`，display 可见状态和 control 完成 ACK 都由 SSE 及时更新，不依赖 `1.5s` register fallback。
-- USB 真机重复锁定/解锁并检查同 command ID 的 pending POST 响应不会覆盖先到的完成态 SSE；当前未在自动化门禁中声称该复测已通过。
-- 至少两台投放端、一个慢/暂停读取的 SSE 客户端和多个并发 ACK 场景下确认目标 session 不串线、慢客户端被重连隔离、控制端最终只执行合并后的设备列表 GET。
+- Android Host `192.168.0.137:8765` 接收带 `Accept-Encoding: gzip` 的 `/api/events` 请求时，响应不含 `Content-Encoding`，`connected` 事件立即返回。
+- 单投放端连续 `20` 次锁定/解锁为 `20/20` 成功：visible 延迟最小 `16ms`、最大 `137ms`、平均 `39ms`、P95 `74ms`；ACK 延迟最小 `32ms`、最大 `184ms`、平均 `63ms`、P95 `166ms`；最终控制端显示“解锁确认 1/1”。
+- 同一物理设备打开两个投放页面并折叠为一个设备、选中两个页面后，连续 `10` 次批量锁定/解锁为 `10/10` 成功：visible 最大 `106ms`，ACK 最大 `130ms`；最终控制端显示“解锁确认 2/2”。
+- 两个并行 curl control SSE 都收到同一命令的 initial 与 completed 两个 `lock-ack`，多客户端 ACK fanout 正常。
+
+## 未验证范围
+
+- 慢客户端的内存背压、队列上限、断开和清理由 Android JVM 单元测试覆盖；本次未在真实 LAN 环境中通过暂停读取来灌满 TCP 发送缓冲区，因此不把现场 socket 背压隔离写成已验证。
