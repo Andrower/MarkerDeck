@@ -152,8 +152,10 @@ class MainActivity : ComponentActivity() {
     private var qrHostConfirmationDialog: AlertDialog? = null
     private var qrDeviceNameDialog: AlertDialog? = null
     private var autoDiscoveryPromptDialog: AlertDialog? = null
+    private var autoDiscoveryPromptCheckCallback: Runnable? = null
+    private var autoDiscoveryPromptCheckGeneration = 0L
     private var lockScreenPermissionGuideDialog: AlertDialog? = null
-    private var pendingAutoDiscovery: Pair<List<DiscoveryHost>, DiscoveryScanTrigger>? = null
+    private var pendingAutoDiscovery: AutoDiscoveryPromptRequest? = null
     private val promptedAutoDiscoveryIdentities = mutableSetOf<String>()
 
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -207,6 +209,10 @@ class MainActivity : ComponentActivity() {
                     renderDiscoveryUi()
                 }
 
+                override fun onScanStartedWithTrigger(trigger: DiscoveryScanTrigger) {
+                    onScanStarted()
+                }
+
                 override fun onHostDiscovered(host: DiscoveryHost) {
                     discoveryUiState = mergeDiscoveryUiState(
                         current = discoveryUiState,
@@ -214,6 +220,13 @@ class MainActivity : ComponentActivity() {
                         incoming = listOf(host)
                     )
                     renderDiscoveryUi()
+                }
+
+                override fun onHostDiscoveredWithTrigger(
+                    host: DiscoveryHost,
+                    trigger: DiscoveryScanTrigger
+                ) {
+                    onHostDiscovered(host)
                 }
 
                 override fun onScanFinished(status: DiscoveryScanStatus, message: String) {
@@ -641,6 +654,7 @@ class MainActivity : ComponentActivity() {
         qrScanInFlight = false
         if (::scanQrButton.isInitialized) scanQrButton.isEnabled = true
         status?.let(::showQrScanStatus)
+        scheduleAutoDiscoveryPromptCheck(120L)
     }
 
     private fun handleQrScanResult(result: ScanIntentResult) {
@@ -860,7 +874,7 @@ class MainActivity : ComponentActivity() {
                 settingsStatus.setText(R.string.settings_restored_status)
             }
             maybeShowLockScreenPermissionGuide()
-            maybeShowAutoDiscoveryPrompt()
+            scheduleAutoDiscoveryPromptCheck()
         }
     }
 
@@ -1376,7 +1390,7 @@ class MainActivity : ComponentActivity() {
         lockScreenPermissionGuideDialog = dialog
         dialog.setOnDismissListener {
             if (lockScreenPermissionGuideDialog === dialog) lockScreenPermissionGuideDialog = null
-            mainHandler.postDelayed({ maybeShowAutoDiscoveryPrompt() }, 250L)
+            scheduleAutoDiscoveryPromptCheck(250L)
         }
         dialog.show()
     }
@@ -1479,6 +1493,7 @@ class MainActivity : ComponentActivity() {
         settingsStatus.setTextColor(getColor(R.color.markerdeck_muted))
         renderEmbeddedHostUi()
         updateDiscoveryLifecycle()
+        scheduleAutoDiscoveryPromptCheck()
     }
 
     private fun clearProjectionRuntimeStateForActivity() {
@@ -1875,7 +1890,7 @@ class MainActivity : ComponentActivity() {
         if (!::settingsScreen.isInitialized) return
         refreshLockScreenPermissionStatus()
         maybeShowLockScreenPermissionGuide()
-        maybeShowAutoDiscoveryPrompt()
+        scheduleAutoDiscoveryPromptCheck()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -1928,34 +1943,63 @@ class MainActivity : ComponentActivity() {
         )
         renderDiscoveryUi()
         if (status == DiscoveryScanStatus.FOUND && discoveryUiState.hosts.isNotEmpty()) {
-            pendingAutoDiscovery = discoveryUiState.hosts to trigger
-            mainHandler.postDelayed({ maybeShowAutoDiscoveryPrompt() }, 120L)
-        } else if (trigger == DiscoveryScanTrigger.STARTUP) {
-            pendingAutoDiscovery = null
+            pendingAutoDiscovery = mergeAutoDiscoveryPrompt(
+                current = pendingAutoDiscovery,
+                incomingHosts = discoveryUiState.hosts,
+                incomingTrigger = trigger
+            )
+            scheduleAutoDiscoveryPromptCheck(120L)
         }
     }
 
     private fun maybeShowAutoDiscoveryPrompt() {
         val pending = pendingAutoDiscovery ?: return
-        if (!settingsHydrated || !isAutoDiscoveryUiAvailable()) return
+        if (!settingsHydrated) return
+        val uiAvailable = isAutoDiscoveryUiAvailable()
+        if (shouldDeferAutoDiscoveryPrompt(pending, uiAvailable)) return
         val decision = decideAutoDiscoveryPrompt(
-            hosts = pending.first,
-            trigger = pending.second,
+            hosts = pending.hosts,
+            trigger = pending.trigger,
             promptedIdentities = promptedAutoDiscoveryIdentities
         )
-        pendingAutoDiscovery = null
-        if (decision.kind == AutoDiscoveryPromptKind.NONE) return
-        when (decision.kind) {
+        if (decision.kind == AutoDiscoveryPromptKind.NONE) {
+            pendingAutoDiscovery = null
+            return
+        }
+        val shown = when (decision.kind) {
             AutoDiscoveryPromptKind.SINGLE_HOST ->
                 showAutoDiscoverySinglePrompt(decision.hosts.single())
             AutoDiscoveryPromptKind.MULTIPLE_HOSTS ->
                 showAutoDiscoveryHostListPrompt(decision.hosts)
-            AutoDiscoveryPromptKind.NONE -> Unit
+            AutoDiscoveryPromptKind.NONE -> false
         }
+        if (shown) pendingAutoDiscovery = null
+    }
+
+    private fun scheduleAutoDiscoveryPromptCheck(delayMs: Long = 0L) {
+        cancelAutoDiscoveryPromptCheck()
+        val token = autoDiscoveryPromptCheckGeneration
+        val callback = object : Runnable {
+            override fun run() {
+                if (autoDiscoveryPromptCheckCallback !== this ||
+                    autoDiscoveryPromptCheckGeneration != token
+                ) return
+                autoDiscoveryPromptCheckCallback = null
+                maybeShowAutoDiscoveryPrompt()
+            }
+        }
+        autoDiscoveryPromptCheckCallback = callback
+        mainHandler.postDelayed(callback, delayMs.coerceAtLeast(0L))
+    }
+
+    private fun cancelAutoDiscoveryPromptCheck() {
+        autoDiscoveryPromptCheckCallback?.let(mainHandler::removeCallbacks)
+        autoDiscoveryPromptCheckCallback = null
+        autoDiscoveryPromptCheckGeneration += 1
     }
 
     private fun clearAutoDiscoveryPrompt() {
-        pendingAutoDiscovery = null
+        cancelAutoDiscoveryPromptCheck()
         val dialog = autoDiscoveryPromptDialog
         autoDiscoveryPromptDialog = null
         runCatching { dialog?.dismiss() }
@@ -1974,9 +2018,8 @@ class MainActivity : ComponentActivity() {
             autoDiscoveryPromptDialog?.isShowing != true &&
             lockScreenPermissionGuideDialog?.isShowing != true
 
-    private fun showAutoDiscoverySinglePrompt(host: DiscoveryHost) {
-        if (!isAutoDiscoveryUiAvailable()) return
-        promptedAutoDiscoveryIdentities += host.identity
+    private fun showAutoDiscoverySinglePrompt(host: DiscoveryHost): Boolean {
+        if (!isAutoDiscoveryUiAvailable()) return false
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.auto_discovery_title)
             .setMessage(
@@ -1997,15 +2040,16 @@ class MainActivity : ComponentActivity() {
         }
         try {
             dialog.show()
+            promptedAutoDiscoveryIdentities += host.identity
+            return true
         } catch (_: RuntimeException) {
-            promptedAutoDiscoveryIdentities.remove(host.identity)
             autoDiscoveryPromptDialog = null
+            return false
         }
     }
 
-    private fun showAutoDiscoveryHostListPrompt(hosts: List<DiscoveryHost>) {
-        if (!isAutoDiscoveryUiAvailable()) return
-        promptedAutoDiscoveryIdentities += hosts.map(DiscoveryHost::identity)
+    private fun showAutoDiscoveryHostListPrompt(hosts: List<DiscoveryHost>): Boolean {
+        if (!isAutoDiscoveryUiAvailable()) return false
         val labels = hosts.map { it.name + "\n" + it.serviceAddress }.toTypedArray()
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.auto_discovery_multiple_title)
@@ -2022,9 +2066,11 @@ class MainActivity : ComponentActivity() {
         }
         try {
             dialog.show()
+            promptedAutoDiscoveryIdentities += hosts.map(DiscoveryHost::identity)
+            return true
         } catch (_: RuntimeException) {
-            hosts.forEach { promptedAutoDiscoveryIdentities.remove(it.identity) }
             autoDiscoveryPromptDialog = null
+            return false
         }
     }
 
@@ -2267,6 +2313,7 @@ class MainActivity : ComponentActivity() {
             qrScanStatusText.text = getString(R.string.qr_connection_cancelled)
             qrScanStatusText.setTextColor(getColor(R.color.markerdeck_muted))
         }
+        scheduleAutoDiscoveryPromptCheck(120L)
     }
 
     private fun clearQrConfirmationFlow(cancelConnecting: Boolean = true) {

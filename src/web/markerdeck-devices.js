@@ -490,7 +490,11 @@
   }
 
   async function loadDevices() {
-    if (!state.serverMode || state.role !== "control" || state.deviceRequestInFlight) return;
+    if (!state.serverMode || state.role !== "control") return;
+    if (state.deviceRequestInFlight) {
+      state.deviceRefreshPending = true;
+      return;
+    }
     state.deviceRequestInFlight = true;
     try {
       const data = await app.api.getDevices();
@@ -499,6 +503,10 @@
       updateStatus("设备列表离线");
     } finally {
       state.deviceRequestInFlight = false;
+      if (state.deviceRefreshPending) {
+        state.deviceRefreshPending = false;
+        Promise.resolve().then(loadDevices);
+      }
     }
   }
 

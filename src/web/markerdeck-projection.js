@@ -214,17 +214,49 @@
     } catch (_) {}
   }
 
-  async function lockProjection(options = {}) {
-    const localUserAction = options.localUserAction === true && options.remote !== true;
-    state.lockedByRemote = !!options.remote;
-    state.locked = true;
-    hideAndroidEmergencyControls();
-    document.activeElement?.blur?.();
-    global.chromaDesktop?.setProjectionLocked?.(true);
-    document.body.classList.add("locked");
-    dom.lockBtn.textContent = "已锁定";
-    pushExitGuard();
+  function applyVisibleLockState(enabled, options = {}) {
+    if (enabled) {
+      state.lockedByRemote = !!options.remote;
+      state.locked = true;
+      state.deviceForceLock = "1";
+      hideAndroidEmergencyControls();
+      document.activeElement?.blur?.();
+      global.chromaDesktop?.setProjectionLocked?.(true);
+      document.body.classList.add("locked");
+      dom.lockBtn.textContent = "已锁定";
+      pushExitGuard();
+    } else {
+      state.lockedByRemote = false;
+      state.locked = false;
+      state.deviceForceLock = "0";
+      hideAndroidEmergencyControls();
+      global.chromaDesktop?.setProjectionLocked?.(false);
+      document.body.classList.remove("locked");
+      dom.lockBtn.textContent = "锁定投放";
+    }
     app.canvas.render();
+    return state.locked === enabled;
+  }
+
+  async function finishLockProjection(enabled, options = {}) {
+    const localUserAction = options.localUserAction === true && options.remote !== true;
+    if (!enabled) {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        try {
+          await document.exitFullscreen();
+        } catch (_) {}
+      }
+      if (state.wakeLock) {
+        try {
+          await state.wakeLock.release();
+        } catch (_) {}
+        state.wakeLock = null;
+      }
+      if (options.localEmergency === true && !state.locked) showAndroidEmergencyControlsAfterLocalUnlock();
+      if (state.role === "display") await publishState();
+      return;
+    }
+
     const root = document.documentElement;
     if (localUserAction && root.requestFullscreen) {
       try {
@@ -236,29 +268,14 @@
     if (state.role === "display") await publishState();
   }
 
+  async function lockProjection(options = {}) {
+    if (!applyVisibleLockState(true, options)) throw new Error("lock-apply-failed");
+    await finishLockProjection(true, options);
+  }
+
   async function unlockProjection(options = {}) {
-    const localEmergency = options.localEmergency === true;
-    state.lockedByRemote = false;
-    state.locked = false;
-    state.deviceForceLock = "0";
-    hideAndroidEmergencyControls();
-    global.chromaDesktop?.setProjectionLocked?.(false);
-    document.body.classList.remove("locked");
-    dom.lockBtn.textContent = "锁定投放";
-    app.canvas.render();
-    if (document.fullscreenElement && document.exitFullscreen) {
-      try {
-        await document.exitFullscreen();
-      } catch (_) {}
-    }
-    if (state.wakeLock) {
-      try {
-        await state.wakeLock.release();
-      } catch (_) {}
-      state.wakeLock = null;
-    }
-    if (localEmergency && !state.locked) showAndroidEmergencyControlsAfterLocalUnlock();
-    if (state.role === "display") await publishState();
+    if (!applyVisibleLockState(false, options)) throw new Error("unlock-apply-failed");
+    await finishLockProjection(false, options);
   }
 
   function isLockHotkey(event) {
@@ -289,11 +306,16 @@
   }
 
   function showLockCommandStatus(status) {
-    const action = status.enabled ? "锁定" : "解锁";
-    const targetCount = Number(status.targetCount || 0);
-    const confirmedCount = Number(status.confirmedCount || 0);
-    const failedCount = Number(status.failedCount || 0);
-    const pendingCount = Number(status.pendingCount ?? Math.max(0, targetCount - Number(status.acknowledgedCount || 0)));
+    const merged = global.MarkerDeckLockFlow.mergeLockCommandStatus(
+      state.lastShownLockCommandStatus,
+      status
+    );
+    state.lastShownLockCommandStatus = merged;
+    const action = merged.enabled ? "锁定" : "解锁";
+    const targetCount = Number(merged.targetCount || 0);
+    const confirmedCount = Number(merged.confirmedCount || 0);
+    const failedCount = Number(merged.failedCount || 0);
+    const pendingCount = Number(merged.pendingCount ?? Math.max(0, targetCount - Number(merged.acknowledgedCount || 0)));
     const failureText = failedCount ? `，${failedCount} 个失败` : "";
     const pendingText = pendingCount ? `，${pendingCount} 个未响应` : "";
     updateStatus(`${action}确认 ${confirmedCount}/${targetCount}${failureText}${pendingText}`);
@@ -324,9 +346,18 @@
         remote: options.remote !== false,
         localUserAction: options.localUserAction === true
       };
-      if (enabled && !state.locked) await lockProjection(projectionOptions);
-      if (!enabled && state.locked) await unlockProjection(projectionOptions);
-      await acknowledgeLock(id, state.locked === !!enabled, state.locked === !!enabled ? "" : "state-mismatch");
+      if (state.locked === !!enabled) {
+        await acknowledgeLock(id, true, "");
+        return;
+      }
+      await global.MarkerDeckLockFlow.executeLockCommand({
+        applyVisible: () => enabled
+          ? applyVisibleLockState(true, projectionOptions)
+          : applyVisibleLockState(false, projectionOptions),
+        runSideEffects: () => finishLockProjection(enabled, projectionOptions),
+        acknowledge: (ok, error) => acknowledgeLock(id, ok, error),
+        fallbackError: "state-mismatch"
+      });
     } catch (error) {
       await acknowledgeLock(id, false, error?.message || "lock-failed");
     }

@@ -56,6 +56,7 @@ const SETTINGS_FILE = path.join(DATA_ROOT, "markerdeck-settings.json");
 const LEGACY_SETTINGS_FILE = path.join(DATA_ROOT, "chroma-settings.json");
 const DEVICE_OFFLINE_MS = 5000;
 const DEFAULT_DEVICE_RETENTION_MS = 10 * 60 * 1000;
+const DEVICE_EVENT_DEBOUNCE_MS = 60;
 const STATIC_ASSETS = new Map([
   ["/markerdeck-screen.html", { file: "markerdeck-screen.html", type: "text/html; charset=utf-8" }],
   ["/markerdeck-launch.html", { file: "markerdeck-launch.html", type: "text/html; charset=utf-8" }],
@@ -70,6 +71,7 @@ const STATIC_ASSETS = new Map([
   ["/markerdeck-export.js", { file: "markerdeck-export.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-presets.js", { file: "markerdeck-presets.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-devices.js", { file: "markerdeck-devices.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-lock-flow.js", { file: "markerdeck-lock-flow.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-projection.js", { file: "markerdeck-projection.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-settings.js", { file: "markerdeck-settings.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-launcher.js", { file: "markerdeck-launcher.js", type: "text/javascript; charset=utf-8" }],
@@ -94,6 +96,7 @@ const lockCommands = new Map();
 const eventClients = new Set();
 let nextEventId = 1;
 let lastPresenceSignature = "";
+let pendingDeviceEventTimer;
 let activeVideoJobs = 0;
 const videoJobs = new Map();
 
@@ -225,10 +228,23 @@ function presenceSignature(now = Date.now()) {
     .join("|");
 }
 
-function notifyDevicesIfChanged(force = false) {
+function notifyDevicesIfChanged(force = false, options = {}) {
   const nextSignature = presenceSignature();
   if (!force && nextSignature === lastPresenceSignature) return;
   lastPresenceSignature = nextSignature;
+  if (options.debounce) {
+    if (pendingDeviceEventTimer) return;
+    pendingDeviceEventTimer = setTimeout(() => {
+      pendingDeviceEventTimer = undefined;
+      pushEvent("devices", { changedAt: Date.now() }, { role: "control" });
+    }, DEVICE_EVENT_DEBOUNCE_MS);
+    pendingDeviceEventTimer.unref?.();
+    return;
+  }
+  if (pendingDeviceEventTimer) {
+    clearTimeout(pendingDeviceEventTimer);
+    pendingDeviceEventTimer = undefined;
+  }
   pushEvent("devices", { changedAt: Date.now() }, { role: "control" });
 }
 
@@ -998,7 +1014,7 @@ async function handler(req, res) {
     }
     const status = lockCommandStatus(command);
     pushEvent("lock-ack", status, { role: "control" });
-    notifyDevicesIfChanged(true);
+    notifyDevicesIfChanged(true, { debounce: true });
     return send(res, 200, JSON.stringify({ ok: true, ...status }), "application/json; charset=utf-8");
   }
 
