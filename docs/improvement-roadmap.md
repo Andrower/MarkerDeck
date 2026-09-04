@@ -210,6 +210,17 @@
 - **剩余现场**：仍需验证两台以上宿主的 `220/240ms` 收集宽限、不同网络/路由器与组播隔离，并通过受控丢包强制丢弃首个 UDP 请求来确认单次重发的真实恢复路径及 abort 后不发送。
 - **依赖**：MD-A14；沿用其协议、安全边界和 USB 真机结果，详细记录见 `docs/tasks/MD-A15.md`。
 
+#### MD-A16 远程锁定与 Android 移动宿主响应优化
+
+状态：共享网页快速 ACK、Node/Android devices 去抖、Android 有界隔离 SSE 队列及自动化时序测试已实现；`lintDebug`、debug 构建和 diff 门禁随本任务收尾执行。USB Android、Android LAN Host `192.168.0.137:8765`、多投放端和慢客户端现场验证待完成。
+
+- **现场基线**：Node 同机控制/投放 Playwright 可见锁定通常 `10-23ms`、峰值 `66ms`。Android 的 `connected` 原始 curl 证据约 `6ms` 可见，但建连后等待 `1s` 再 POST 的 targeted lock event 曾约下一秒才出现；一次浏览器解锁到投放页 body 状态改变约 `1367ms`，控制端先显示未响应，随后由 `1.5s` register fallback 更新。`EventSource.readyState=1` 不作为事件及时到达证明。
+- **投放端 ACK**：远程命令先同步应用 DOM/canvas/native 可见状态，只有应用成功才 ACK；Fullscreen、wake lock、状态 publish 等慢副作用并行完成。本地用户 Fullscreen、Android/Electron bridge、三击解锁、命令去重和 lock baseline 保持不变。
+- **Android SSE**：移除请求线程按客户端写 `PipedOutputStream` 的耦合，改为每客户端 `64` 条/`256KiB` 有界队列型 InputStream；入队不等待 socket，超限客户端断开并由 EventSource 重连，connected/连续事件顺序和 target session 过滤保持。NanoHTTPD chunked response 的逐 chunk flush 不是本任务假定的单一根因，验证重点是 producer、InputStream read、NanoHTTPD response 和 socket 的分段到达时间。
+- **设备 fanout**：Node/Android 的 lock-ack 事件立即发送；设备状态继续更新并持久化，devices 事件在 `60ms` 窗口内合并，最终控制端仍完整 GET `/api/devices`。普通注册、离线清理、状态更新路径不删除。
+- **自动化与剩余现场**：Node/网页测试覆盖快速 ACK、慢副作用、连续 SSE event 到达、target session、ACK 即时与设备刷新合并；Android JVM/真实 NanoHTTPD HTTP 测试覆盖 connected/连续事件可读、队列上限清理、慢客户端隔离和去抖。仍需 USB 单宿主闭环、`192.168.0.137:8765` 严格计时、多设备/慢客户端和不同网络复测。
+- **依赖**：MD-A15；沿用现有 SSE/状态/发现协议和 fallback 语义，详细记录见 `docs/tasks/MD-A16.md`。
+
 ### 5. 关键门禁与共同验收
 
 - MD-A02 普通投放端 MVP 完成并通过兼容性验收后，继续以普通 Activity 生命周期作为唯一恢复路径，不在文档、界面或 Release 说明中暗示系统级锁定能力。
@@ -249,7 +260,7 @@ MarkerDeck/
 - **M2 普通投放可靠性**：MD-A06 完成普通投放的设备/API 支持矩阵、20 次灭屏/亮屏、弱网和 WebView 异常记录。
 - **M3 可发布 APK**：MD-A07 生成签名 APK、校验值和 GitHub Release 产物；未验证的 Android API/OEM 不写入支持声明。
 
-建议依赖顺序为 `MD-A01 -> MD-A02 -> MD-A03 -> MD-A08 -> MD-A09 -> MD-A10 -> MD-A11 -> MD-A14 -> MD-A15 -> MD-A06 -> MD-A07`；MD-A09 作为 Android 宿主纵切并行维护，MD-A10/MD-A11/MD-A14/MD-A15 不改变普通投放和兼容性门禁。
+建议依赖顺序为 `MD-A01 -> MD-A02 -> MD-A03 -> MD-A08 -> MD-A09 -> MD-A10 -> MD-A11 -> MD-A14 -> MD-A15 -> MD-A16 -> MD-A06 -> MD-A07`；MD-A09 作为 Android 宿主纵切并行维护，MD-A10/MD-A11/MD-A14/MD-A15/MD-A16 不改变普通投放和兼容性门禁。
 
 浏览器/PWA 不作为满足强前台的实现。
 

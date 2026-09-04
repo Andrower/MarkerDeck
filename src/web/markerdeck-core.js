@@ -313,6 +313,7 @@
     deviceGroupPreviewCanvases: new Map(),
     expandedDeviceIds: new Set(),
     deviceRequestInFlight: false,
+    deviceRefreshPending: false,
     selectedDeviceNameId: "",
     selectedDeviceNameDraft: "",
     selectedDeviceNameLocked: false,

@@ -19,6 +19,10 @@ class AndroidHostServer(
 ) : NanoHTTPD(bindAddress, requestedPort) {
     private class BadRequest(message: String) : RuntimeException(message)
 
+    private val deviceChangeDebouncer = MarkerDeckHostDeviceChangeDebouncer {
+        publishDevicesChangedNow()
+    }
+
     private val staticAssets = mapOf(
         "/markerdeck-screen.html" to Asset("markerdeck-screen.html", "text/html; charset=utf-8"),
         "/markerdeck-launch.html" to Asset("markerdeck-launch.html", "text/html; charset=utf-8"),
@@ -33,6 +37,7 @@ class AndroidHostServer(
         "/markerdeck-export.js" to Asset("markerdeck-export.js", "text/javascript; charset=utf-8"),
         "/markerdeck-presets.js" to Asset("markerdeck-presets.js", "text/javascript; charset=utf-8"),
         "/markerdeck-devices.js" to Asset("markerdeck-devices.js", "text/javascript; charset=utf-8"),
+        "/markerdeck-lock-flow.js" to Asset("markerdeck-lock-flow.js", "text/javascript; charset=utf-8"),
         "/markerdeck-projection.js" to Asset("markerdeck-projection.js", "text/javascript; charset=utf-8"),
         "/markerdeck-settings.js" to Asset("markerdeck-settings.js", "text/javascript; charset=utf-8"),
         "/markerdeck-launcher.js" to Asset("markerdeck-launcher.js", "text/javascript; charset=utf-8"),
@@ -290,7 +295,7 @@ class AndroidHostServer(
                 error = body.optString("error")
             ) ?: return textResponse(NanoHTTPD.Response.Status.NOT_FOUND, "Lock command not found")
             sseHub.publish("lock-ack", status.toJson(), role = "control")
-            publishDevicesChanged()
+            publishDevicesChanged(debounce = true)
             return jsonResponse(
                 NanoHTTPD.Response.Status.OK,
                 JSONObject().put("ok", true).putAll(status.toJson())
@@ -360,6 +365,7 @@ class AndroidHostServer(
             targetSessionIds = delivery.targetSessionIds
         )
         sseHub.publish("lock-ack", delivery.status.toJson(), role = "control")
+        publishDevicesChanged()
     }
 
     private fun lockResponse(delivery: HostLockDelivery, includeCommand: Boolean = false): NanoHTTPD.Response {
@@ -368,7 +374,15 @@ class AndroidHostServer(
         return jsonResponse(NanoHTTPD.Response.Status.OK, body)
     }
 
-    private fun publishDevicesChanged() {
+    private fun publishDevicesChanged(debounce: Boolean = false) {
+        if (debounce) {
+            deviceChangeDebouncer.schedule()
+        } else {
+            deviceChangeDebouncer.emitNow()
+        }
+    }
+
+    private fun publishDevicesChangedNow() {
         sseHub.publish("devices", JSONObject().put("changedAt", System.currentTimeMillis()), role = "control")
     }
 
@@ -455,6 +469,7 @@ class AndroidHostServer(
         textResponse(status, body.toString(), "application/json; charset=utf-8")
 
     override fun stop() {
+        deviceChangeDebouncer.close()
         sseHub.close()
         super.stop()
     }

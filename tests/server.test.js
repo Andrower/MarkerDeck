@@ -119,6 +119,76 @@ function openSseConnection(role, sessionId, pageInstanceId = "") {
   });
 }
 
+function openSseClient(role, sessionId, pageInstanceId = "") {
+  return new Promise((resolve, reject) => {
+    const request = http.get(`${origin}/api/events?role=${encodeURIComponent(role)}&sessionId=${encodeURIComponent(sessionId)}&pageInstanceId=${encodeURIComponent(pageInstanceId)}`);
+    const queuedEvents = [];
+    const waiters = [];
+    let response;
+    let buffer = "";
+    let settled = false;
+
+    const fail = (error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+      while (waiters.length) waiters.shift().reject(error);
+    };
+
+    const dispatch = (block) => {
+      const lines = block.split(/\r?\n/);
+      const eventName = lines.find((line) => line.startsWith("event: "))?.slice(7) || "message";
+      const data = lines.filter((line) => line.startsWith("data: ")).map((line) => line.slice(6)).join("\n");
+      if (!data) return;
+      const event = { name: eventName, data: JSON.parse(data), receivedAt: Date.now() };
+      const waiterIndex = waiters.findIndex((waiter) => waiter.name === eventName);
+      if (waiterIndex >= 0) {
+        const waiter = waiters.splice(waiterIndex, 1)[0];
+        clearTimeout(waiter.timeout);
+        waiter.resolve(event);
+      } else {
+        queuedEvents.push(event);
+      }
+    };
+
+    request.on("response", (nextResponse) => {
+      response = nextResponse;
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        buffer += chunk;
+        const blocks = buffer.split(/\r?\n\r?\n/);
+        buffer = blocks.pop() || "";
+        blocks.forEach(dispatch);
+      });
+      const client = {
+        next(name, timeoutMs = 3000) {
+          const queuedIndex = queuedEvents.findIndex((event) => event.name === name);
+          if (queuedIndex >= 0) return Promise.resolve(queuedEvents.splice(queuedIndex, 1)[0]);
+          return new Promise((resolveNext, rejectNext) => {
+            const timeout = setTimeout(() => {
+              const index = waiters.findIndex((waiter) => waiter.resolve === resolveNext);
+              if (index >= 0) waiters.splice(index, 1);
+              rejectNext(new Error(`Timed out waiting for SSE event: ${name}`));
+            }, timeoutMs);
+            waiters.push({ name, resolve: resolveNext, reject: rejectNext, timeout });
+          });
+        },
+        close() {
+          request.destroy();
+          response?.destroy();
+        }
+      };
+      settled = true;
+      resolve(client);
+    });
+    request.on("error", (error) => {
+      if (error.code === "ECONNRESET" && settled) return;
+      fail(error);
+    });
+  });
+}
+
 before(async () => {
   fakeHostServer = http.createServer((request, response) => {
     const url = new URL(request.url, `http://127.0.0.1:${fakeHostPort}`);
@@ -236,6 +306,7 @@ test("serves modular screen assets with exact content types and rejects unknown 
     ["/markerdeck-export.js", "text/javascript"],
     ["/markerdeck-presets.js", "text/javascript"],
     ["/markerdeck-devices.js", "text/javascript"],
+    ["/markerdeck-lock-flow.js", "text/javascript"],
     ["/markerdeck-projection.js", "text/javascript"],
     ["/markerdeck-settings.js", "text/javascript"],
     ["/markerdeck-launcher.js", "text/javascript"],
@@ -603,6 +674,101 @@ test("pushes state changes through the realtime event stream", async () => {
   });
   assert.equal(event.sessionId, "test-session");
   assert.equal(event.state.bgColor, "#654321");
+});
+
+test("delivers a targeted lock command immediately after an established SSE connection", async () => {
+  const sessionId = "lock-latency-display";
+  const registration = await jsonRequest("/api/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: sessionId,
+      sessionId,
+      deviceId: "lock-latency-device",
+      pageInstanceId: "lock-latency-page",
+      name: "锁定延迟测试屏",
+      role: "display"
+    })
+  });
+  assert.equal(registration.response.status, 200);
+
+  const display = await openSseClient("display", sessionId, "lock-latency-page");
+  try {
+    await display.next("connected");
+    const startedAt = Date.now();
+    const commandPromise = jsonRequest("/api/lock-command", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: [sessionId], enabled: true })
+    });
+    const event = await display.next("lock-command", 750);
+    const elapsedMs = event.receivedAt - startedAt;
+    const command = await commandPromise;
+
+    assert.equal(command.response.status, 200);
+    assert.equal(event.data.commandId, command.body.commandId);
+    assert.equal(event.data.enabled, true);
+    assert.ok(elapsedMs < 750, `lock-command SSE delivery took ${elapsedMs}ms`);
+  } finally {
+    display.close();
+  }
+});
+
+test("pushes each lock ACK immediately while coalescing the devices refresh", async () => {
+  const sessionId = "lock-ack-latency-display";
+  await jsonRequest("/api/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: sessionId,
+      sessionId,
+      deviceId: "lock-ack-latency-device",
+      pageInstanceId: "lock-ack-latency-page",
+      name: "ACK 合并测试屏",
+      role: "display"
+    })
+  });
+  const control = await openSseClient("control", "lock-ack-latency-control");
+  try {
+    await control.next("connected");
+    const command = await jsonRequest("/api/lock-command", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: [sessionId], enabled: true })
+    });
+    await control.next("lock-ack");
+    await control.next("devices");
+
+    const firstAckAt = Date.now();
+    const firstAckPromise = control.next("lock-ack", 750);
+    const firstAck = await jsonRequest("/api/lock-ack", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commandId: command.body.commandId, sessionId, ok: true, locked: true })
+    });
+    const firstEvent = await firstAckPromise;
+    assert.ok(firstEvent.receivedAt - firstAckAt < 750);
+    assert.equal(firstAck.body.confirmedCount, 1);
+
+    const secondAckPromise = control.next("lock-ack", 750);
+    await jsonRequest("/api/lock-ack", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commandId: command.body.commandId, sessionId, ok: true, locked: true })
+    });
+    const secondEvent = await secondAckPromise;
+    assert.equal(secondEvent.data.confirmedCount, 1);
+
+    const refresh = await control.next("devices", 750);
+    assert.equal(refresh.data.changedAt > 0, true);
+    await assert.rejects(control.next("devices", 120), /Timed out/);
+
+    const deviceState = await jsonRequest(`/api/state?deviceId=${encodeURIComponent(sessionId)}`);
+    assert.equal(deviceState.body.forceLock, "1");
+    assert.equal(deviceState.body.displayLocked, "1");
+  } finally {
+    control.close();
+  }
 });
 
 test("broadcasts lock commands without device state updates consuming them", async () => {

@@ -21,6 +21,7 @@ const screenScripts = [
   "src/web/markerdeck-export.js",
   "src/web/markerdeck-presets.js",
   "src/web/markerdeck-devices.js",
+  "src/web/markerdeck-lock-flow.js",
   "src/web/markerdeck-projection.js",
   "src/web/markerdeck-settings.js",
   "src/web/markerdeck-launcher.js",
