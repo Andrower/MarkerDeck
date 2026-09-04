@@ -49,5 +49,26 @@
     return { applied: true, acknowledged: true };
   }
 
-  return Object.freeze({ executeLockCommand });
+  function acknowledgedCount(status) {
+    const explicit = Number(status?.acknowledgedCount);
+    if (Number.isFinite(explicit)) return explicit;
+    const targetCount = Number(status?.targetCount);
+    const pendingCount = Number(status?.pendingCount);
+    return Number.isFinite(targetCount) && Number.isFinite(pendingCount)
+      ? Math.max(0, targetCount - pendingCount)
+      : 0;
+  }
+
+  function mergeLockCommandStatus(current, incoming) {
+    if (!current) return incoming;
+    if (!incoming) return current;
+    const currentId = String(current.commandId || "");
+    const incomingId = String(incoming.commandId || "");
+    if (!currentId || !incomingId || currentId !== incomingId) return incoming;
+    if (acknowledgedCount(incoming) < acknowledgedCount(current)) return current;
+    if (current.complete === true && incoming.complete !== true) return current;
+    return incoming;
+  }
+
+  return Object.freeze({ executeLockCommand, mergeLockCommandStatus });
 });

@@ -306,11 +306,16 @@
   }
 
   function showLockCommandStatus(status) {
-    const action = status.enabled ? "锁定" : "解锁";
-    const targetCount = Number(status.targetCount || 0);
-    const confirmedCount = Number(status.confirmedCount || 0);
-    const failedCount = Number(status.failedCount || 0);
-    const pendingCount = Number(status.pendingCount ?? Math.max(0, targetCount - Number(status.acknowledgedCount || 0)));
+    const merged = global.MarkerDeckLockFlow.mergeLockCommandStatus(
+      state.lastShownLockCommandStatus,
+      status
+    );
+    state.lastShownLockCommandStatus = merged;
+    const action = merged.enabled ? "锁定" : "解锁";
+    const targetCount = Number(merged.targetCount || 0);
+    const confirmedCount = Number(merged.confirmedCount || 0);
+    const failedCount = Number(merged.failedCount || 0);
+    const pendingCount = Number(merged.pendingCount ?? Math.max(0, targetCount - Number(merged.acknowledgedCount || 0)));
     const failureText = failedCount ? `，${failedCount} 个失败` : "";
     const pendingText = pendingCount ? `，${pendingCount} 个未响应` : "";
     updateStatus(`${action}确认 ${confirmedCount}/${targetCount}${failureText}${pendingText}`);

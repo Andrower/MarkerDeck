@@ -157,7 +157,9 @@ class AndroidHostServerTest {
             .openConnection() as HttpURLConnection
         events.connectTimeout = 2_000
         events.readTimeout = 2_000
+        events.setRequestProperty("Accept-Encoding", "gzip")
         assertEquals(200, events.responseCode)
+        assertEquals(null, events.getHeaderField("Content-Encoding"))
         BufferedReader(InputStreamReader(events.inputStream, Charsets.UTF_8)).use { reader ->
             val connectedStartedAt = System.nanoTime()
             assertEquals("connected", readSseEvent(reader).first)
@@ -197,6 +199,68 @@ class AndroidHostServerTest {
             }
         }
         events.disconnect()
+    }
+
+    @Test
+    fun disablesGzipAndStreamsCompletedLockAckToAnEstablishedControlConnection() {
+        val sessionId = "sse-lock-ack-session"
+        assertEquals(
+            200,
+            request(
+                path = "/api/register",
+                method = "POST",
+                body = """{"id":"$sessionId","sessionId":"$sessionId","deviceId":"sse-lock-ack-device","name":"SSE ACK 测试屏","role":"display"}"""
+            ).first
+        )
+
+        val events = URL("http://127.0.0.1:${server.getListeningPort()}/api/events?role=control")
+            .openConnection() as HttpURLConnection
+        events.connectTimeout = 2_000
+        events.readTimeout = 2_000
+        events.setRequestProperty("Accept-Encoding", "gzip")
+        assertEquals(200, events.responseCode)
+        assertEquals(null, events.getHeaderField("Content-Encoding"))
+        BufferedReader(InputStreamReader(events.inputStream, Charsets.UTF_8)).use { reader ->
+            assertEquals("connected", readSseEvent(reader).first)
+            val command = JSONObject(
+                request(
+                    path = "/api/lock-command",
+                    method = "POST",
+                    body = """{"ids":["$sessionId"],"enabled":true}"""
+                ).second
+            )
+            val pending = readSseEvent(reader)
+            assertEquals("lock-ack", pending.first)
+            assertEquals(0, JSONObject(pending.second).getInt("acknowledgedCount"))
+            assertEquals("devices", readSseEvent(reader).first)
+
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val startedAt = System.nanoTime()
+                val ackPost = executor.submit<Pair<Int, String>> {
+                    request(
+                        path = "/api/lock-ack",
+                        method = "POST",
+                        body = """{"commandId":"${command.getString("commandId")}","sessionId":"$sessionId","ok":true,"locked":true}"""
+                    )
+                }
+                val completed = readSseEvent(reader)
+                assertTrue("completed lock-ack was delayed", elapsedMillis(startedAt) < 500)
+                assertEquals("lock-ack", completed.first)
+                assertEquals(1, JSONObject(completed.second).getInt("confirmedCount"))
+                assertEquals(200, ackPost.get(2, TimeUnit.SECONDS).first)
+            } finally {
+                executor.shutdownNow()
+            }
+        }
+        events.disconnect()
+
+        val compressedInfo = URL("http://127.0.0.1:${server.getListeningPort()}/api/info")
+            .openConnection() as HttpURLConnection
+        compressedInfo.setRequestProperty("Accept-Encoding", "gzip")
+        assertEquals(200, compressedInfo.responseCode)
+        assertEquals("gzip", compressedInfo.getHeaderField("Content-Encoding"))
+        compressedInfo.disconnect()
     }
 
     @Test

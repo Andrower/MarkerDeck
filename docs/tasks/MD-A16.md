@@ -2,13 +2,14 @@
 
 ## 状态
 
-代码、Node/网页测试、Android JVM/HTTP 集成测试、Node 检查和 Android `:app:test` 已完成；`lintDebug`、`assembleDebug` 与 `git diff --check` 在本次收尾门禁中执行。USB Android、Android LAN Host `192.168.0.137:8765` 及多投放端/慢客户端现场复测仍待主代理验收，本记录不将其写成已通过。
+代码、Node/网页测试、Android JVM/HTTP 集成测试、Lint 和 debug 构建门禁已完成。真机验收进一步定位到 Android NanoHTTPD 对 SSE 自动启用 gzip；禁用 SSE gzip 和控制端 ACK 状态单调合并的补丁已通过完整自动化门禁。Android LAN Host `192.168.0.137:8765` 的失败证据保留，新 APK 的 USB/浏览器和多投放端现场复测仍待完成，不提前写成已通过。
 
 ## 基线与定位
 
 - Node Host 同机 Playwright 控制页/投放页的可见锁定通常为 `10-23ms`，峰值 `66ms`。
-- Android Host 的原始现场证据需要区分两个阶段：`curl -N /api/events` 的 `connected` 在建连约 `6ms` 可见，并非必须等待心跳；但建连完成后等待 `1s` 再 POST，`lock-command` 仍曾在约下一秒才出现在 trace。浏览器两页中一次解锁到 display `body` locked 状态改变约 `1367ms`，控制端先显示 `解锁确认 0/1，1 个未响应`，随后由 `1.5s` register fallback 更新。两页 `EventSource.readyState=1` 不能证明事件已经及时被消费。
-- 因此不能把问题归结为 SSE header 或 heartbeat 缓冲。NanoHTTPD `ChunkedOutputStream` 不对每个 chunk 单独 flush，但底层写入是 socket stream；本任务将事件到达拆成建连、连续事件、目标 session 过滤、可见应用和 ACK 五段计时。Android 的 `PipedInputStream/PipedOutputStream` 生产者路径改为明确的有界 blocking `InputStream` 队列，避免 `available/read` 语义或慢网络写入把请求线程和其他客户端串联；LAN 现场根因和最终收益仍需实机复测。
+- Android Host 的原始现场证据需要区分客户端：`curl -N /api/events` 的 `connected` 在建连约 `6ms` 可见，两个并行 curl control SSE 都能收到初始和完成态 lock ACK；浏览器两页中一次解锁到 display `body` locked 状态改变约 `1367ms`，控制端持续显示 `解锁确认 0/1，1 个未响应`，随后由 `1.5s` register fallback 更新。重建 Chrome EventSource 后 display 可见锁定约 `579ms`，服务端状态已 complete，control 仍没有收到 lock ACK。
+- Playwright request 47 最终给出决定性差异：Chromium 的 Android SSE 响应带 `content-encoding: gzip`，curl 默认未协商 gzip。NanoHTTPD 默认对所有 `text/*` 响应启用 gzip，把无限 SSE body 包进 `GZIPOutputStream`；小型 `connected`、`lock-command`、`lock-ack` 和 `devices` 块没有及时形成可解压输出。`EventSource.readyState=1` 只表示连接建立，不能证明事件已分派。
+- 修复不使用 padding 掩盖问题。Android Host 仅对 `text/event-stream` 覆盖 NanoHTTPD gzip 策略，其他文本/JSON 响应保留默认压缩；同时保留有界队列以隔离慢客户端。实际 Node HTTP 探针在未压缩路径记录到 command POST 后约 `61ms` 的 display command、`92ms` 的完成态 control ACK 和 `160ms` 的 devices event，进一步证明 Hub 入队、target 过滤和裸 chunk 输出本身可及时工作。
 
 ## 实现
 
@@ -17,6 +18,7 @@
 - 抽出 `markerdeck-lock-flow.js` 纯执行编排：先同步应用 DOM/canvas/native 可见锁定状态，再启动 ACK；Fullscreen、wake lock、display state publish 等慢副作用不再阻塞成功 ACK。只有可见状态确实应用成功时才发送成功 ACK；失败仍发送失败 ACK。
 - 本地用户锁定继续允许浏览器 Fullscreen，本地解锁继续释放 Fullscreen/wake lock 和显示 Android 紧急控制；远程命令不请求无用户手势的 Fullscreen。远程锁定同时写入 `forceLock`，保持注册 heartbeat 和状态拉取的持久 baseline。
 - 保留 command 去重、global/target command ID、三击解锁、Electron bridge 和 Android bridge；控制端设备列表在 GET 进行中收到多个 devices 事件时记录 pending refresh，最终仍会完整刷新。
+- 控制端对同一 command ID 的状态使用单调 ACK 进度：若完成态先通过 SSE 到达，随后返回的创建命令 pending 快照不能再把 UI 覆盖回 `0/1`；新 command ID 和真实后续进度仍正常显示。
 
 ### Node Host
 
@@ -26,6 +28,7 @@
 ### Android Host
 
 - `MarkerDeckHostSseHub` 为每个客户端使用独立、有界的队列型 `InputStream`，容量为 `64` 个事件且最多 `256KiB`。生产者只做非阻塞入队；队列超限、关闭或不可可靠投递时清理并断开该客户端，让 EventSource 重连，不阻塞其他客户端。连接初始 `retry`/`connected` 与后续事件在同一事件锁下入队，保持顺序和 target session 匹配；不创建每客户端常驻线程。
+- `AndroidHostServer.useGzipWhenAccepted` 对 `text/event-stream` 明确返回 false，阻止 NanoHTTPD 用 `GZIPOutputStream` 缓冲无限流；`application/json` 和其他原有可压缩响应继续调用父类策略。没有增加 SSE padding 或改变事件协议。
 - Android lock delivery 保留 `lock-command`、初始 `lock-ack`、global/target 字段和设备持久状态；ACK 自身立即推送，设备刷新使用与 Node 等价的 `60ms` 去抖。`1.5s` register heartbeat 与 `15s` state pull 的兜底语义未改变。
 - Android 静态资源映射同步加入 `markerdeck-lock-flow.js`；停止宿主时同时取消设备事件去抖器和 SSE 资源。
 
@@ -39,10 +42,10 @@
 
 覆盖内容：
 
-- Node `tests/lock-flow.test.js` 验证可见应用、快速 ACK、慢副作用并行和应用失败不虚报成功。
+- Node `tests/lock-flow.test.js` 验证可见应用、快速 ACK、慢副作用并行、应用失败不虚报成功，以及完成态 SSE 不被同 command ID 的 pending POST 快照回退。
 - Node `tests/server.test.js` 验证已连接 SSE 的 targeted `lock-command` 到达时序、每个 `lock-ack` 即时推送、批量 ACK 的 devices 刷新合并、最终设备状态和协议字段。
 - Android `HostSseHubTest` 验证 connected/连续 payload 入队后立即可读、队列上限触发关闭和清理、慢客户端不阻塞其他客户端、去抖合并与立即 flush。
-- Android `AndroidHostServerTest` 通过真实 NanoHTTPD/`HttpURLConnection` 验证连接后的 connected、连续 targeted lock events 和 session 过滤路径。
+- Android `AndroidHostServerTest` 通过真实 NanoHTTPD/`HttpURLConnection` 并显式发送 `Accept-Encoding: gzip`，验证 SSE 响应不含 `Content-Encoding: gzip`，connected、连续 targeted lock events 和完成态 control lock ACK 可立即读取；普通 JSON 响应仍保留 gzip。
 
 本次收尾执行：
 
@@ -54,10 +57,10 @@ ANDROID_HOME=/Users/andrower/Library/Android/sdk \
 git diff --check
 ```
 
-Node 主代理已独立报告 `48/48` 通过，Android `:app:test` 已通过；`lintDebug`、`assembleDebug` 和 diff 检查以本次收尾命令结果为准。
+gzip 根因修复后，Node `npm run check` 为 `50/50` 通过；Android `:app:test :app:lintDebug :app:assembleDebug` 为 `BUILD SUCCESSFUL`。`git diff --check` 在追加提交前执行。
 
 ## 剩余现场验证
 
-- 在 Android Host `192.168.0.137:8765` 重新执行严格单 shell 的 `curl -N` 建连/连续事件计时，确认 connected 约 `6ms` 的基线和建连后 lock command 不再出现约 `1s` 延迟。
-- USB 真机完成控制页/投放页锁定与解锁闭环，检查可见状态、ACK 状态和 1.5s fallback；当前未在本任务自动化门禁中声称已通过。
+- 将修复后的 APK 覆盖安装到 Android Host `192.168.0.137:8765`，通过 Playwright 确认 SSE response 不再出现 `content-encoding: gzip`，display 可见状态和 control 完成 ACK 都由 SSE 及时更新，不依赖 `1.5s` register fallback。
+- USB 真机重复锁定/解锁并检查同 command ID 的 pending POST 响应不会覆盖先到的完成态 SSE；当前未在自动化门禁中声称该复测已通过。
 - 至少两台投放端、一个慢/暂停读取的 SSE 客户端和多个并发 ACK 场景下确认目标 session 不串线、慢客户端被重连隔离、控制端最终只执行合并后的设备列表 GET。

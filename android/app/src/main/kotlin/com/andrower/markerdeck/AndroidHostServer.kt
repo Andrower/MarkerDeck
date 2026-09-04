@@ -46,6 +46,12 @@ class AndroidHostServer(
 
     private data class Asset(val fileName: String, val contentType: String)
 
+    override fun useGzipWhenAccepted(response: NanoHTTPD.Response): Boolean {
+        val mediaType = response.mimeType?.substringBefore(';')?.trim()
+        if (mediaType.equals("text/event-stream", ignoreCase = true)) return false
+        return super.useGzipWhenAccepted(response)
+    }
+
     override fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response = try {
         route(session)
     } catch (error: BadRequest) {

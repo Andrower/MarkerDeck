@@ -318,6 +318,7 @@
     selectedDeviceNameDraft: "",
     selectedDeviceNameLocked: false,
     deviceForceLock: "0",
+    lastShownLockCommandStatus: null,
     lastLockCommandId: "0",
     lastGlobalLockCommandId: "0",
     globalLockBaselineInitialized: false,
