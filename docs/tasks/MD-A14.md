@@ -2,7 +2,7 @@
 
 ## 状态
 
-代码、Node 纯逻辑/组合扫描测试、Android JVM 测试、Lint、debug 构建、项目结构检查和 macOS 便携包结构检查已完成。真机以及不同路由器的 mDNS 现场验证仍待完成，不能由 CI 或本地环回测试替代。
+代码、Node 纯逻辑/组合扫描测试、Android JVM 测试、Lint、debug 构建、项目结构检查和 macOS 便携包结构检查已完成。USB Android 真机上的 Node/Android 双向 mDNS、自动发现询问、命名连接、远程状态同步和 Android 宿主后台发布已完成现场验证；不同路由器、网络切换和组播隔离场景仍待验证。
 
 ## 目标与边界
 
@@ -47,6 +47,14 @@ git diff --check
 
 另执行了 macOS 便携 ZIP 的内容检查，确认 Node runtime、服务端源码和 `app/node_modules/bonjour-service` 及其运行时依赖同时存在。测试不依赖真实 mDNS 网络，使用假的浏览器/HTTP 响应和 Android 纯逻辑模型覆盖去重、回退、生命周期、过期回调以及启动提示决策。
 
-## 未完成现场验证
+## 现场验证
 
-仍需在至少一台真实 Android 设备和不同路由器/交换网络环境验证：NsdManager 发布与解析、Android/Node 跨设备互发现、多宿主提示、网络切换、组播隔离、路由器对 mDNS 的过滤行为、前后台及系统权限弹窗时序。当前未伪造这些结果。
+已在 USB 连接的 Android 16 真机（22127RK46C）与同一局域网内的 macOS Node 宿主完成以下验证：
+
+- Android 启动扫描发现 Node 宿主并显示中文连接询问，地址为实际局域网地址而非 `localhost`。
+- 确认连接后显示设备名称输入框；以 `USB-Test-Phone` 连接后，Node `/api/devices` 返回在线投放端及正确的 CSS 尺寸、DPR、`deviceId` 和 `sessionId`。
+- Node 通过 SSE 远程切换蓝底绿十字后，Android 投放页面立即更新。
+- Android 启动内置宿主后，Node 的纯 mDNS 浏览器从 `_markerdeck._tcp.local` 解析到 Android 宿主 `192.168.0.137:8765`，TXT 中的服务、协议版本和 `instanceId` 正确。
+- Android Activity 退到后台后，内置宿主仍能被 Node 发现；停止服务后 HTTP 端口关闭。
+
+仍需在不同路由器/交换网络环境验证：多个宿主同时出现时的选择弹窗、Wi-Fi 切换、组播隔离、路由器过滤 mDNS，以及更多 OEM 对 NSD 和系统权限弹窗时序的影响。
