@@ -7,6 +7,16 @@
       background: rgba(255, 255, 255, 0.08);
     }
 
+    /* Scene editing is a control-console surface.  Local and display roles
+       keep the original quick-adjustment/preset flow without empty scene
+       columns, scene pickers or remote-target details in the panel. */
+    body:not(.control-mode) .scene-column,
+    body:not(.control-mode) .device-selection-footer,
+    body:not(.control-mode) .selected-screen-section,
+    body:not(.control-mode) .scene-manager-overlay {
+      display: none !important;
+    }
+
     body.control-mode .device-manager {
       display: grid;
       gap: 10px;
