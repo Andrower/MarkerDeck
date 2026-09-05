@@ -467,3 +467,297 @@
       }
     }
 
+    /* Phone controls keep the existing workflows and reduce the editable map to a summary. */
+    @media (max-width: 759px) {
+      body.control-mode {
+        overflow: auto;
+      }
+
+      body.control-mode .panel {
+        position: absolute;
+        inset: 0;
+        height: auto;
+        min-height: 100%;
+        overflow: auto;
+        padding-bottom: calc(86px + env(safe-area-inset-bottom));
+      }
+
+      body.control-mode .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        min-height: 58px;
+        padding: 8px 12px;
+      }
+
+      body.control-mode .title h1 {
+        font-size: 14px;
+      }
+
+      body.control-mode .readout {
+        font-size: 10px;
+      }
+
+      body.control-mode .control-global-actions {
+        gap: 4px;
+      }
+
+      body.control-mode .control-global-actions button {
+        min-height: 34px;
+        padding: 0 7px;
+        font-size: 10px;
+      }
+
+      body.control-mode .control-workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+        grid-template-areas: "devices" "scene" "settings";
+        height: auto;
+        min-height: 0;
+        gap: 10px;
+        padding: 10px;
+        background: transparent;
+      }
+
+      body.control-mode .workspace-column {
+        display: block;
+        overflow: visible;
+        background: transparent;
+      }
+
+      body.control-mode .device-column,
+      body.control-mode .scene-column,
+      body.control-mode .settings-column {
+        padding: 0;
+      }
+
+      body.control-mode .device-manager,
+      body.control-mode .scene-section,
+      body.control-mode .scene-quick-presets,
+      body.control-mode .selected-screen-section,
+      body.control-mode .settings-section {
+        border-radius: 7px;
+      }
+
+      body.control-mode .scene-map-viewport {
+        display: none;
+      }
+
+      body.control-mode .scene-current-target {
+        padding: 8px 0 0;
+      }
+
+      body.control-mode .scene-map-dock {
+        margin-top: 0;
+      }
+
+      .scene-quick-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .scene-quick-preset > span:last-child {
+        font-size: 9px;
+      }
+
+      .scene-map-edit-note {
+        display: none;
+      }
+
+      .scene-manager-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .scene-manager-list-pane {
+        border-right: 0;
+        border-bottom: 1px solid var(--workspace-line);
+      }
+
+      .scene-editor-fields {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+
+      .scene-editor-fields label:first-child {
+        grid-column: 1 / -1;
+      }
+
+      .scene-editor-times {
+        display: none;
+      }
+
+      .scene-editor-actions {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .preset-library-body .preset-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .control-quickconnect-body {
+        grid-template-columns: 1fr;
+      }
+
+      .control-quickconnect img {
+        width: min(190px, 100%);
+        height: auto;
+        aspect-ratio: 1;
+        justify-self: center;
+      }
+    }
+
+    @media (max-width: 420px) {
+      body.control-mode .control-global-actions button:last-child {
+        display: none;
+      }
+
+      body.control-mode .device-batch-tools,
+      body.control-mode .device-group-tools {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .scene-quick-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .scene-quick-head {
+        display: grid;
+      }
+
+      .scene-quick-head > button {
+        justify-self: start;
+      }
+
+      .scene-editor-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (min-width: 760px) {
+      body.control-mode .control-workspace {
+        grid-template-columns: minmax(236px, 0.72fr) minmax(440px, 1.55fr) minmax(300px, 0.92fr);
+        grid-template-rows: minmax(0, 1fr);
+        grid-template-areas: "devices scene settings";
+        height: calc(100% - 62px);
+      }
+
+      body.control-mode .device-column {
+        grid-area: devices;
+      }
+
+      body.control-mode .scene-column {
+        grid-area: scene;
+      }
+
+      body.control-mode .settings-column {
+        grid-area: settings;
+      }
+    }
+
+    /* The desktop workspace becomes a two-column tablet layout before the
+       three-column minimums can overflow a narrow viewport. */
+    @media (min-width: 760px) and (max-width: 1199px) {
+      body.control-mode .panel {
+        left: 0;
+        right: 0;
+        width: auto;
+        transform: none;
+        padding: 0;
+      }
+
+      body.control-mode.locked .panel {
+        transform: none;
+      }
+
+      body.control-mode .control-workspace {
+        grid-template-columns: minmax(218px, 0.78fr) minmax(0, 1.22fr);
+        /* Keep both stacked rows bounded by the viewport.  An auto-sized
+           settings row can grow to its preset cards' min-content height and
+           collapse the device row to zero.  Each column owns its scroll. */
+        grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas: "devices scene" "settings scene";
+        height: calc(100% - 62px);
+      }
+
+      body.control-mode .device-column {
+        grid-area: devices;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      body.control-mode .scene-column {
+        grid-area: scene;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      body.control-mode .settings-column {
+        grid-area: settings;
+        min-height: 0;
+        overflow: auto;
+        align-content: start;
+      }
+
+      body.control-mode .scene-section {
+        min-height: 0;
+      }
+
+      body.control-mode .scene-map-viewport {
+        min-height: 0;
+        height: clamp(280px, calc(100vh - 170px), 560px);
+      }
+    }
+
+    @media (max-width: 759px) {
+      /* Phones expose selection, locking and the existing preset sheet; the
+         desktop floor-plan editor and duplicate quick-preset grid stay out of
+         the scrolling path. */
+      body.control-mode .scene-section,
+      body.control-mode .scene-quick-presets {
+        display: none !important;
+      }
+
+      body.control-mode .device-column {
+        display: block;
+      }
+
+      body.control-mode .device-manager {
+        overflow: visible;
+      }
+
+      body.control-mode .device-list {
+        grid-template-columns: 1fr;
+      }
+
+      body.control-mode .device-group-body {
+        grid-template-columns: 1fr;
+      }
+
+      body.control-mode .device-selection-footer {
+        position: static;
+        margin: 8px 0 0;
+        padding: 9px 2px 0;
+        background: transparent;
+      }
+
+      body.control-mode .device-selection-footer .scene-picker-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      body.control-mode .device-selection-footer .scene-picker-row label {
+        grid-column: 1 / -1;
+      }
+
+      body.control-mode .device-selection-lock button {
+        min-width: 112px;
+      }
+    }
+
+    @media (max-width: 420px) {
+      body.control-mode .device-selection-lock {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      body.control-mode .device-selection-lock button {
+        width: 100%;
+      }
+    }

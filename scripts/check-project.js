@@ -21,6 +21,7 @@ const screenScripts = [
   "src/web/markerdeck-export.js",
   "src/web/markerdeck-presets.js",
   "src/web/markerdeck-devices.js",
+  "src/web/markerdeck-scenes.js",
   "src/web/markerdeck-lock-flow.js",
   "src/web/markerdeck-projection.js",
   "src/web/markerdeck-settings.js",
@@ -48,6 +49,7 @@ const requiredFiles = [
   "platform/windows/start-markerdeck-server.bat",
   "tests/host-discovery.test.js",
   "tests/mdns.test.js",
+  "tests/scenes.test.js",
   "scripts/package-macos.sh",
   "scripts/package-windows.ps1"
 ];

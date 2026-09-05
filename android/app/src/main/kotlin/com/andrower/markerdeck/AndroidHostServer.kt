@@ -37,6 +37,7 @@ class AndroidHostServer(
         "/markerdeck-export.js" to Asset("markerdeck-export.js", "text/javascript; charset=utf-8"),
         "/markerdeck-presets.js" to Asset("markerdeck-presets.js", "text/javascript; charset=utf-8"),
         "/markerdeck-devices.js" to Asset("markerdeck-devices.js", "text/javascript; charset=utf-8"),
+        "/markerdeck-scenes.js" to Asset("markerdeck-scenes.js", "text/javascript; charset=utf-8"),
         "/markerdeck-lock-flow.js" to Asset("markerdeck-lock-flow.js", "text/javascript; charset=utf-8"),
         "/markerdeck-projection.js" to Asset("markerdeck-projection.js", "text/javascript; charset=utf-8"),
         "/markerdeck-settings.js" to Asset("markerdeck-settings.js", "text/javascript; charset=utf-8"),

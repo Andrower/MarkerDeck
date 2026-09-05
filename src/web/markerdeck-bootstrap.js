@@ -8,6 +8,7 @@
     app.exporter.init();
     app.presets.init();
     app.devices.init();
+    app.scenes?.init?.();
     app.settings.init();
     app.projection.init();
     app.launcher.init();

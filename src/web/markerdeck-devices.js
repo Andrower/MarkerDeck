@@ -131,6 +131,71 @@
     return Array.from(groups.values());
   }
 
+  function createDeviceGroupSection(groupName) {
+    const section = document.createElement("section");
+    section.className = "device-list-group";
+    section.dataset.deviceGroup = groupName;
+    const header = document.createElement("div");
+    header.className = "device-group-header";
+    const label = document.createElement("label");
+    label.className = "device-group-check";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "device-group-select";
+    checkbox.setAttribute("aria-label", `选择${groupName}全部设备`);
+    const name = document.createElement("span");
+    name.className = "device-group-name";
+    name.textContent = groupName;
+    const count = document.createElement("span");
+    count.className = "device-group-count";
+    count.setAttribute("aria-live", "polite");
+    const collapseButton = document.createElement("button");
+    collapseButton.type = "button";
+    collapseButton.className = "device-group-toggle";
+    collapseButton.setAttribute("aria-label", `收起${groupName}设备列表`);
+    label.append(checkbox, name);
+    header.append(label, count, collapseButton);
+    const body = document.createElement("div");
+    body.className = "device-group-body";
+    section.append(header, body);
+    const group = { section, header, checkbox, name, count, collapseButton, body, devices: [], collapsed: false };
+    collapseButton.addEventListener("click", () => {
+      group.collapsed = !group.collapsed;
+      updateDeviceGroupSection(group, group.devices);
+    });
+    checkbox.addEventListener("change", async () => {
+      const ids = group.devices.flatMap((physical) => physical.devices.map((device) => device.id));
+      if (checkbox.checked) ids.forEach((id) => state.selectedDeviceIds.add(id));
+      else ids.forEach((id) => state.selectedDeviceIds.delete(id));
+      state.selectionInitialized = true;
+      const selected = state.lastDevices.find((device) => state.selectedDeviceIds.has(device.id));
+      if (selected) await selectDevice(selected.id, selected.state);
+      else {
+        clearSelectedDevice();
+        renderDevices(state.lastDevices);
+      }
+    });
+    return group;
+  }
+
+  function updateDeviceGroupSection(group, physicalGroups) {
+    group.devices = physicalGroups;
+    const allDevices = physicalGroups.flatMap((physical) => physical.devices);
+    const selectedCount = allDevices.filter((device) => state.selectedDeviceIds.has(device.id)).length;
+    group.name.textContent = group.section.dataset.deviceGroup || "未分组";
+    group.count.textContent = `${selectedCount}/${allDevices.length}`;
+    group.checkbox.checked = allDevices.length > 0 && selectedCount === allDevices.length;
+    group.checkbox.indeterminate = selectedCount > 0 && selectedCount < allDevices.length;
+    group.checkbox.setAttribute("aria-label", `选择${group.section.dataset.deviceGroup || "未分组"}全部设备`);
+    group.section.classList.toggle("is-partial", group.checkbox.indeterminate);
+    group.section.classList.toggle("is-collapsed", group.collapsed);
+    group.body.hidden = group.collapsed;
+    group.collapseButton.textContent = group.collapsed ? "▸" : "▾";
+    group.collapseButton.setAttribute("aria-expanded", String(!group.collapsed));
+    group.collapseButton.setAttribute("aria-label", `${group.collapsed ? "展开" : "收起"}${group.section.dataset.deviceGroup || "未分组"}设备列表`);
+    group.collapseButton.title = group.collapseButton.getAttribute("aria-label");
+  }
+
   async function togglePhysicalDeviceSelection(group) {
     const ids = group.devices.map((device) => device.id);
     const allSelected = ids.every((id) => state.selectedDeviceIds.has(id));
@@ -332,6 +397,25 @@
     app.canvas.renderDeviceThumbnail(card.thumbnail, device.state || readState(), deviceWidth, deviceHeight);
   }
 
+  function refreshConnectedThumbnails() {
+    const isConnected = (canvas) => !!canvas && (canvas.isConnected === undefined || canvas.isConnected);
+    state.deviceGroupCards.forEach((card) => {
+      if (!isConnected(card.thumbnail) || !card.group) return;
+      const online = card.group.devices.filter((device) => device.online);
+      const representative = card.group.devices.find((device) => device.id === state.selectedDeviceId) || online[0] || card.group.devices[0];
+      if (representative) {
+        app.canvas.renderDeviceThumbnail(card.thumbnail, representative.state || readState(), representative.width, representative.height);
+      }
+    });
+    state.deviceCards.forEach((card) => {
+      if (!isConnected(card.thumbnail) || !card.device) return;
+      const width = Math.max(1, Number(card.device.width) || 9);
+      const height = Math.max(1, Number(card.device.height) || 16);
+      app.canvas.renderDeviceThumbnail(card.thumbnail, card.device.state || readState(), width, height);
+    });
+    renderPreview(readState());
+  }
+
   function reconcileChildCards(container, desiredNodes) {
     const desiredSet = new Set(desiredNodes);
     Array.from(container.children).forEach((node) => {
@@ -365,6 +449,8 @@
       state.deviceCards.clear();
       state.deviceGroupCards.forEach((card) => card.groupElement.remove());
       state.deviceGroupCards.clear();
+      state.deviceGroupSectionElements?.forEach((section) => section.section.remove());
+      state.deviceGroupSectionElements?.clear();
       state.devicePreviewCanvases.clear();
       state.deviceGroupPreviewCanvases.clear();
       state.expandedDeviceIds.clear();
@@ -382,6 +468,7 @@
       updateRemoteLockButton();
       renderPreview(readState());
       updateSelectionUi();
+      app.scenes?.onDevicesChanged?.();
       return;
     }
     const physicalGroups = groupPhysicalDevices(devices);
@@ -402,29 +489,54 @@
       state.deviceGroupCards.delete(id);
       state.deviceGroupPreviewCanvases.delete(id);
     });
+    const groupedPhysical = new Map();
     physicalGroups.forEach((group) => {
-      let groupCard = state.deviceGroupCards.get(group.id);
-      if (!groupCard) {
-        groupCard = createPhysicalDeviceCard();
-        state.deviceGroupCards.set(group.id, groupCard);
-        state.deviceGroupPreviewCanvases.set(group.id, groupCard.thumbnail);
-      }
-      updatePhysicalDeviceCard(groupCard, group);
-      if (state.expandedDeviceIds.has(group.id) && group.devices.length > 1) {
-        const childNodes = group.devices.map((device, index) => {
-          let card = state.deviceCards.get(device.id);
-          if (!card) {
-            card = createDeviceCard();
-            state.deviceCards.set(device.id, card);
-            state.devicePreviewCanvases.set(device.id, card.thumbnail);
-          }
-          updateDeviceCard(card, device, { sessionIndex: index + 1 });
-          return card.item;
-        });
-        reconcileChildCards(groupCard.children, childNodes);
-      }
-      dom.deviceList.append(groupCard.groupElement);
+      const groupName = String(group.devices[0]?.group || "未分组").trim() || "未分组";
+      if (!groupedPhysical.has(groupName)) groupedPhysical.set(groupName, []);
+      groupedPhysical.get(groupName).push(group);
     });
+    state.deviceGroupSectionElements?.forEach((section, groupName) => {
+      if (groupedPhysical.has(groupName)) return;
+      section.section.remove();
+      state.deviceGroupSectionElements.delete(groupName);
+    });
+    groupedPhysical.forEach((groups, groupName) => {
+      let section = state.deviceGroupSectionElements?.get(groupName);
+      if (!section) {
+        section = createDeviceGroupSection(groupName);
+        state.deviceGroupSectionElements?.set(groupName, section);
+      }
+      updateDeviceGroupSection(section, groups);
+      groups.forEach((group) => {
+        let groupCard = state.deviceGroupCards.get(group.id);
+        if (!groupCard) {
+          groupCard = createPhysicalDeviceCard();
+          state.deviceGroupCards.set(group.id, groupCard);
+          state.deviceGroupPreviewCanvases.set(group.id, groupCard.thumbnail);
+        }
+        updatePhysicalDeviceCard(groupCard, group);
+        if (state.expandedDeviceIds.has(group.id) && group.devices.length > 1) {
+          const childNodes = group.devices.map((device, index) => {
+            let card = state.deviceCards.get(device.id);
+            if (!card) {
+              card = createDeviceCard();
+              state.deviceCards.set(device.id, card);
+              state.devicePreviewCanvases.set(device.id, card.thumbnail);
+            }
+            updateDeviceCard(card, device, { sessionIndex: index + 1 });
+            return card.item;
+          });
+          reconcileChildCards(groupCard.children, childNodes);
+        }
+        section.body.append(groupCard.groupElement);
+      });
+      dom.deviceList.append(section.section);
+    });
+    // Cards are created before their section is attached to the document, so
+    // a canvas renderer cannot measure its CSS box during update*.  Refresh
+    // once after attachment to avoid a 1×1 thumbnail and keep aspect ratios
+    // correct after responsive layout changes.
+    refreshConnectedThumbnails();
     dom.deviceList.scrollTop = Math.min(previousScrollTop, Math.max(0, dom.deviceList.scrollHeight - dom.deviceList.clientHeight));
     let selected = devices.find((device) => device.id === state.selectedDeviceId && state.selectedDeviceIds.has(device.id));
     if (!selected && state.selectedDeviceIds.size) {
@@ -468,6 +580,7 @@
       app.settings.updateRandomPointsButton();
     }
     updateSelectionUi();
+    app.scenes?.onDevicesChanged?.();
   }
 
   function updateRemoteLockButton() {
@@ -557,6 +670,7 @@
 
   function init() {
     app.canvas.addRenderListener(renderPreview);
+    global.addEventListener?.("resize", refreshConnectedThumbnails);
     dom.refreshDevicesBtn.addEventListener("click", loadDevices);
     dom.deviceRetentionSelect.addEventListener("change", async () => {
       try {
@@ -675,4 +789,5 @@
     updateRemoteLockButton,
     renderPreview
   };
+  app.devices.toggleDevice = toggleDeviceSelection;
 })(window);
