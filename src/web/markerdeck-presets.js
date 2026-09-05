@@ -59,6 +59,7 @@
 
   function closeMobilePresetSheet() {
     dom.mobilePresetSheet.classList.add("hidden");
+    document.body.classList.remove("mobile-preset-management");
   }
 
   function openMobilePresetSheet() {
@@ -285,13 +286,24 @@
     });
     document.getElementById("mobileManagePresetsBtn").addEventListener("click", () => {
       closeMobilePresetSheet();
-      document.body.classList.add("mobile-preset-management");
-      app.scenes?.openPresetLibrary?.();
+      if (state.role === "control") {
+        document.body.classList.add("mobile-preset-management");
+        app.scenes?.openPresetLibrary?.();
+      } else {
+        // Local/display pages keep the existing preset section in the main
+        // panel; the control-only scene module must not open its overlay.
+        document.body.classList.add("mobile-preset-management");
+      }
       document.querySelector(".preset-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     document.getElementById("mobileCustomSettingsBtn").addEventListener("click", () => {
       closeMobilePresetSheet();
       document.body.classList.remove("mobile-preset-management");
+      document.querySelector(".settings-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    document.getElementById("presetManagementBackBtn")?.addEventListener("click", () => {
+      if (state.role === "control") app.scenes?.closePresetLibrary?.();
+      else document.body.classList.remove("mobile-preset-management");
       document.querySelector(".settings-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     document.addEventListener("keydown", (event) => {
@@ -308,6 +320,7 @@
     reconcile: reconcileActivePreset,
     updateMobileTarget: updateMobilePresetTarget,
     updateMobileCurrent: updateMobileCurrentPreset,
-    saveMobilePreferences: saveMobilePresetPreferences
+    saveMobilePreferences: saveMobilePresetPreferences,
+    closeMobile: closeMobilePresetSheet
   };
 })(window);

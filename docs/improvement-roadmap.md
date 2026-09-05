@@ -236,6 +236,15 @@
 - **静态资源与测试**：Node/Android 静态资源白名单包含 `markerdeck-scenes.js`；场景专项测试覆盖版本/存储异常、合法 sessionId 标点、复制/删除边界、local/display 隔离、表单新建/保存/Enter、取消选择以及拖拽期间设备刷新，并接入 Node 检查脚本。
 - **验收**：`npm test` 与 `npm run check` 均为 57/57，`git diff --check` 和 Android `:app:test :app:lintDebug :app:assembleDebug`（104 项测试）通过；浏览器 6 个视口与 CRUD、分组、多会话、拖拽、预设和 PNG 检查已记录，Android 真机/OEM 未测。
 
+#### MD-A18 手机被控端快速调节
+
+状态：手机 local/display 快速调节已完成（真机/OEM 未测）；既有投放协议保持不变，详见 `docs/tasks/MD-A18.md`。
+
+- **首屏参数**：手机被控端解锁面板先展示背景颜色、总体亮度、十字颜色和大小等常用参数，保存/删除预设与导出留在管理态或后部。
+- **预设入口**：复用已有移动预设栏、sheet 和 `applyPreset`；local/display 的管理入口显示既有预设列表并可返回参数，不打开 control 专用 overlay。
+- **锁定边界**：锁定或远程锁定时关闭 sheet、清理管理态与焦点，隐藏面板及快捷入口；解锁不自动恢复旧 sheet，ACK、同步和 interaction guard 语义不变。
+- **验收**：纳入 `390×844`、`360×800` 和 `844×390` 视口；`npm run check` 通过（57/57），`git diff --check` 通过，Android `test`、`lintDebug`、`assembleDebug` 通过（104 项 JVM 基线测试），真机/OEM 与软键盘保持未测。
+
 ### 5. 关键门禁与共同验收
 
 - MD-A02 普通投放端 MVP 完成并通过兼容性验收后，继续以普通 Activity 生命周期作为唯一恢复路径，不在文档、界面或 Release 说明中暗示系统级锁定能力。
