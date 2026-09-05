@@ -168,6 +168,7 @@
       empty.textContent = "暂无预设，可保存当前设置创建一个";
       dom.presetGrid.append(empty);
       buildMobilePresets();
+      app.scenes?.onPresetsChanged?.();
       return;
     }
     state.presets.forEach((preset) => {
@@ -193,6 +194,7 @@
       dom.presetGrid.append(item);
     });
     buildMobilePresets();
+    app.scenes?.onPresetsChanged?.();
   }
 
   async function loadPresets() {
@@ -284,6 +286,7 @@
     document.getElementById("mobileManagePresetsBtn").addEventListener("click", () => {
       closeMobilePresetSheet();
       document.body.classList.add("mobile-preset-management");
+      app.scenes?.openPresetLibrary?.();
       document.querySelector(".preset-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     document.getElementById("mobileCustomSettingsBtn").addEventListener("click", () => {

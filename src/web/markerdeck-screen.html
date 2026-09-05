@@ -78,6 +78,7 @@
         <button id="controlModeBtn">作为控制端</button>
       </div>
     </div>
+
   </section>
 
   <section class="panel" id="panel">
@@ -86,23 +87,33 @@
         <h1>MarkerDeck 视效标记屏控</h1>
         <div class="readout" id="readout"></div>
       </div>
-      <button class="primary" id="lockBtn">锁定投放</button>
+      <div class="control-global-actions" aria-label="控制台操作">
+        <button id="controlQuickconnectBtn" type="button" aria-expanded="false">快速连接</button>
+        <button id="newSceneBtn" class="primary" type="button">新建场景</button>
+        <button id="manageScenesBtn" type="button">场景管理</button>
+      </div>
+      <button class="primary local-lock-button" id="lockBtn">锁定投放</button>
     </div>
 
     <div class="control-workspace">
       <div class="workspace-column connect-column">
-      <div class="control-quickconnect" id="controlQuickconnect">
+      <div class="control-quickconnect" id="controlQuickconnect" hidden role="dialog" aria-modal="true" aria-labelledby="quickconnectTitle">
+      <div class="control-quickconnect-card">
       <div class="control-quickconnect-title">
-        <span>快速连接</span>
-        <div class="quickconnect-actions">
-          <button id="copyControlUrlBtn">复制地址</button>
-          <button id="stopServerBtn">停止服务</button>
+        <div>
+          <strong id="quickconnectTitle">快速连接</strong>
+          <span>扫码或复制地址，在另一台设备打开 MarkerDeck</span>
         </div>
+        <button id="closeQuickconnectBtn" type="button" aria-label="关闭快速连接">×</button>
       </div>
       <div class="control-quickconnect-body">
         <img id="controlQrImage" alt="控制端二维码">
         <div class="quickconnect-meta">
           <div class="quickconnect-url" id="controlUrlText">正在检测内网地址...</div>
+          <div class="quickconnect-actions">
+            <button id="copyControlUrlBtn" type="button">复制地址</button>
+            <button id="stopServerBtn" type="button">停止服务</button>
+          </div>
         </div>
       </div>
       </div>
@@ -113,7 +124,6 @@
       <div class="device-title">
         <span>设备管理</span>
         <div class="device-actions">
-          <button id="forceLockBtn">远程锁定</button>
           <button id="refreshDevicesBtn">刷新</button>
         </div>
       </div>
@@ -151,9 +161,89 @@
     </div>
       <div class="device-list" id="deviceList"></div>
       </div>
+      <div class="device-selection-footer" aria-label="场景与投放选择">
+        <div class="scene-picker-row">
+          <label for="sceneSelect">当前场景</label>
+          <select id="sceneSelect" aria-label="选择场景"></select>
+          <button id="sceneManageInlineBtn" type="button">管理</button>
+        </div>
+        <div class="device-selection-lock">
+          <span>锁定当前选择</span>
+          <button id="forceLockBtn" type="button">远程锁定</button>
+        </div>
+      </div>
+      </div>
+
+      <div class="workspace-column scene-column">
+        <section class="scene-section" aria-labelledby="sceneWorkspaceTitle">
+          <div class="scene-section-head">
+            <div>
+              <h2 id="sceneWorkspaceTitle">场景平面图</h2>
+              <p id="sceneMetaReadout">屏幕卡片同步显示当前投放画面</p>
+            </div>
+            <div class="scene-section-actions">
+              <label class="scene-density-control" for="sceneDensitySelect">卡片
+                <select id="sceneDensitySelect" aria-label="场景卡片密度">
+                  <option value="detailed">详细</option>
+                  <option value="compact" selected>紧凑</option>
+                  <option value="icon">图标</option>
+                </select>
+              </label>
+              <button id="sceneEditLayoutBtn" type="button" aria-pressed="false">编辑布局</button>
+            </div>
+          </div>
+          <div class="scene-current-target">
+            <strong id="sceneCurrentTarget">当前选择：未选择屏幕</strong>
+            <span id="sceneCurrentLocation">请从设备列表或场景平面图选择投放目标</span>
+          </div>
+          <div class="scene-map-viewport" id="sceneMapViewport">
+            <div class="scene-map-tools" aria-label="平面图缩放">
+              <button id="sceneZoomOutBtn" type="button" aria-label="缩小">−</button>
+              <span id="sceneZoomReadout">100%</span>
+              <button id="sceneZoomInBtn" type="button" aria-label="放大">+</button>
+              <button id="sceneZoomFitBtn" type="button">适配</button>
+            </div>
+            <div class="scene-map" id="sceneMap" role="application" aria-label="场景平面图"></div>
+            <span class="scene-map-scale">等比例显示 · 设备坐标按场景尺寸换算</span>
+            <span class="scene-map-size" id="sceneSizeReadout"></span>
+          </div>
+          <div class="scene-map-dock">
+            <div class="scene-map-dock-copy">
+              <strong id="sceneDockTitle">已选择 0 个屏幕</strong>
+              <span id="sceneDockDetail">从设备列表或场景平面图选择投放目标</span>
+            </div>
+            <div class="scene-map-dock-actions">
+              <button id="sceneClearSelectionBtn" type="button">取消选择</button>
+            </div>
+          </div>
+          <div class="scene-map-edit-note">
+            <span id="sceneMapHint">点击屏幕卡片选择投放目标 · 布局按场景保存</span>
+            <span id="sceneNameReadout">默认场景</span>
+          </div>
+        </section>
+        <section class="scene-quick-presets" aria-labelledby="sceneQuickPresetTitle">
+          <div class="scene-quick-head">
+            <div>
+              <h2 id="sceneQuickPresetTitle">常用与最近预设</h2>
+              <p>快速应用到当前选择的投放页面</p>
+            </div>
+            <button id="openPresetLibraryBtn" type="button">打开全部预设库</button>
+          </div>
+          <div class="scene-quick-grid" id="sceneQuickPresets"></div>
+        </section>
       </div>
 
       <div class="workspace-column settings-column">
+        <section class="selected-screen-section" aria-labelledby="selectedScreenTitle">
+          <div class="selected-screen-head">
+            <div>
+              <h2 id="selectedScreenTitle">屏幕详情与参数</h2>
+              <p>实时同步到所选屏幕</p>
+            </div>
+            <span class="selected-screen-count" id="sceneSelectedCount">已选 0</span>
+          </div>
+          <div class="selected-screen-target" id="selectedScreenTarget">当前未选择设备</div>
+        </section>
         <section class="preset-section">
           <div class="preset-toolbar">
             <input id="presetNameInput" type="text" maxlength="40" placeholder="输入新预设名称" autocomplete="off">
@@ -240,6 +330,56 @@
         </section>
       </div>
     </div>
+
+    <section class="preset-library-overlay" id="presetLibraryOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="presetLibraryTitle">
+      <header class="overlay-header">
+        <div>
+          <h2 id="presetLibraryTitle">全部预设库</h2>
+          <p>管理、搜索并应用常用预设，也可以保存当前画面供下次使用</p>
+        </div>
+        <button id="closePresetLibraryBtn" type="button">返回控制台</button>
+      </header>
+      <div class="preset-library-body"></div>
+    </section>
+
+    <section class="scene-manager-overlay" id="sceneManagerOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="sceneManagerTitle">
+      <header class="overlay-header">
+        <div>
+          <h2 id="sceneManagerTitle">场景管理</h2>
+            <p id="sceneManagerMeta">场景尺寸决定平面图比例，屏幕位置按场景独立保存；场景仅保存在当前浏览器</p>
+        </div>
+        <button id="sceneManagerCloseBtn" type="button">返回控制台</button>
+      </header>
+      <div class="scene-manager-layout">
+        <aside class="scene-manager-list-pane">
+          <div class="scene-manager-list-head"><strong>全部场景</strong><span id="sceneCountReadout">0 个场景</span></div>
+          <div class="scene-manager-list" id="sceneManagerList"></div>
+          <button id="sceneCreateBtn" class="primary" type="button">新建场景</button>
+        </aside>
+        <form class="scene-editor" id="sceneForm">
+          <div class="scene-editor-head">
+            <div>
+              <h3 id="sceneManagerMode">编辑当前场景</h3>
+              <p>输入真实宽高后建立固定比例画布，窗口变化只会整体缩放。</p>
+            </div>
+          </div>
+          <div class="scene-editor-fields">
+            <label>场景名称<input id="sceneNameInput" type="text" maxlength="80" autocomplete="off"></label>
+            <label>宽度<input id="sceneWidthInput" type="number" min="0.01" max="100000" step="0.01" inputmode="decimal"></label>
+            <span class="scene-editor-times">×</span>
+            <label>高度<input id="sceneHeightInput" type="number" min="0.01" max="100000" step="0.01" inputmode="decimal"></label>
+            <label>单位<select id="sceneUnitSelect"><option value="m">米</option><option value="cm">厘米</option><option value="mm">毫米</option><option value="ft">英尺</option><option value="in">英寸</option><option value="无单位">无单位</option></select></label>
+          </div>
+          <div class="scene-ratio-preview"><span id="sceneRatioReadout">固定比例预览</span><div></div></div>
+          <div class="scene-editor-actions">
+            <button id="sceneApplyBtn" type="submit" class="primary">保存场景</button>
+            <button id="sceneDuplicateBtn" type="button">复制当前场景</button>
+            <button id="sceneRenameBtn" type="button">重命名</button>
+            <button id="sceneDeleteBtn" type="button">删除场景</button>
+          </div>
+        </form>
+      </div>
+    </section>
   </section>
 
   <div class="mobile-preset-bar" id="mobilePresetBar">
@@ -292,6 +432,7 @@
   <script src="markerdeck-export.js"></script>
   <script src="markerdeck-presets.js"></script>
   <script src="markerdeck-devices.js"></script>
+  <script src="markerdeck-scenes.js"></script>
   <script src="markerdeck-lock-flow.js"></script>
   <script src="markerdeck-projection.js"></script>
   <script src="markerdeck-settings.js"></script>

@@ -30,6 +30,7 @@ class AndroidHostServerTest {
                 when (name) {
                     "markerdeck-screen.html" -> "<html>screen</html>".toByteArray()
                     "markerdeck-visual-state.js" -> "visual".toByteArray()
+                    "markerdeck-scenes.js" -> "scenes".toByteArray()
                     "markerdeck-lock-flow.js" -> "lock-flow".toByteArray()
                     else -> null
                 }
@@ -67,6 +68,10 @@ class AndroidHostServerTest {
         val visualAsset = request("/markerdeck-visual-state.js")
         assertEquals(200, visualAsset.first)
         assertEquals("visual", visualAsset.second)
+
+        val scenesAsset = request("/markerdeck-scenes.js")
+        assertEquals(200, scenesAsset.first)
+        assertEquals("scenes", scenesAsset.second)
 
         val registration = request(
             path = "/api/register",

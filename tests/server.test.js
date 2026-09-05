@@ -306,6 +306,7 @@ test("serves modular screen assets with exact content types and rejects unknown 
     ["/markerdeck-export.js", "text/javascript"],
     ["/markerdeck-presets.js", "text/javascript"],
     ["/markerdeck-devices.js", "text/javascript"],
+    ["/markerdeck-scenes.js", "text/javascript"],
     ["/markerdeck-lock-flow.js", "text/javascript"],
     ["/markerdeck-projection.js", "text/javascript"],
     ["/markerdeck-settings.js", "text/javascript"],

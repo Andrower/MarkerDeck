@@ -519,6 +519,7 @@
     }
     if (state.role === "control") {
       updateStatus("控制端");
+      app.scenes?.init?.();
       app.devices.updateRemoteLockButton();
       app.devices.loadSettings();
       app.devices.load();

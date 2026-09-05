@@ -71,6 +71,7 @@ const STATIC_ASSETS = new Map([
   ["/markerdeck-export.js", { file: "markerdeck-export.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-presets.js", { file: "markerdeck-presets.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-devices.js", { file: "markerdeck-devices.js", type: "text/javascript; charset=utf-8" }],
+  ["/markerdeck-scenes.js", { file: "markerdeck-scenes.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-lock-flow.js", { file: "markerdeck-lock-flow.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-projection.js", { file: "markerdeck-projection.js", type: "text/javascript; charset=utf-8" }],
   ["/markerdeck-settings.js", { file: "markerdeck-settings.js", type: "text/javascript; charset=utf-8" }],

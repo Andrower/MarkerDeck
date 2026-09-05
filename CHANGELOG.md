@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 完成 MD-A17 控制端场景工作台：桌面/平板提供顶栏快速连接与场景管理、按分组选择设备和等比例场景平面图；场景尺寸与接收页面归一化坐标按版本保存到浏览器 localStorage。设备分组支持全选、部分选中、多会话展开/收起，场景拖拽期间设备刷新不再替换卡片；手机隐藏完整平面图编辑与重复预设网格，保留设备选择、批量锁定和底部预设入口。补充 Node/Android `markerdeck-scenes.js` 静态资源白名单与专项测试；Android 真机/OEM 未测。
+
 ## 1.6.0 - 2026-09-04
 
 - 完成 MD-A16 远程锁定与 Android 移动宿主响应优化：共享投放端先同步应用可见 DOM/canvas/native 锁定状态，再立即发送 ACK，Fullscreen、wake lock 和状态发布等慢副作用并行收尾；同一命令的完成态 SSE 不会被较晚返回的 pending POST 快照覆盖。Node 与 Android 保留持久 lock baseline、global/target command ID、去重和 1.5 秒注册 heartbeat/15 秒状态拉取兜底。Android SSE 改用每客户端有界隔离队列，慢客户端超限时断开并重连；同时仅对 `text/event-stream` 禁用 NanoHTTPD 自动 gzip，避免 Chromium 协商 gzip 后小事件滞留在 `GZIPOutputStream`，其他响应压缩行为不变。Node/Android 对 lock ACK 的 devices 刷新使用等价短去抖，ACK 本身仍立即推送。补充带 `Accept-Encoding: gzip` 的真实 HTTP 连续事件、control ACK、慢客户端队列清理、网页快速 ACK 和批量 ACK 合并测试。修复后的 Android LAN Host 已完成 root 覆盖安装与验收：gzip 请求的 SSE 不含 `Content-Encoding` 且 connected 立即返回；单投放页连续锁定/解锁 `20/20` 成功，visible P95 `74ms`、ACK P95 `166ms`，最终确认 `1/1`；同一物理设备双投放页批量锁定/解锁 `10/10` 成功，visible 最大 `106ms`、ACK 最大 `130ms`，最终确认 `2/2`；两个并行 control SSE 均收到 initial 和 completed ACK。慢客户端内存背压已有单元测试覆盖，但未现场灌满 TCP 发送缓冲区。
