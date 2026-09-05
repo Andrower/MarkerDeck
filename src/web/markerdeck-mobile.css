@@ -55,7 +55,8 @@
         display: grid;
       }
 
-      body.control-mode .mobile-preset-bar {
+      body.control-mode .mobile-preset-bar,
+      body:not(.control-mode) .mobile-preset-bar {
         position: fixed;
         left: max(12px, env(safe-area-inset-left));
         right: max(12px, env(safe-area-inset-right));
@@ -74,6 +75,8 @@
         box-shadow: 0 10px 32px rgba(0, 0, 0, 0.42);
         touch-action: manipulation;
       }
+
+    }
 
       .mobile-preset-bar .swatch {
         width: 42px;
@@ -111,7 +114,9 @@
         font-weight: 800;
       }
 
-      body.control-mode .mobile-preset-sheet {
+    @media (max-width: 759px) {
+      body.control-mode .mobile-preset-sheet,
+      body:not(.control-mode) .mobile-preset-sheet {
         position: fixed;
         inset: 0;
         z-index: 120;
@@ -121,9 +126,11 @@
         touch-action: auto;
       }
 
-      body.control-mode .mobile-preset-sheet.hidden {
+      body.control-mode .mobile-preset-sheet.hidden,
+      body:not(.control-mode) .mobile-preset-sheet.hidden {
         display: none;
       }
+    }
 
       .mobile-preset-sheet-card {
         display: grid;
@@ -270,7 +277,7 @@
         height: 20px;
         accent-color: #58df72;
       }
-    }
+
 
     .name-dialog {
       position: fixed;
@@ -759,5 +766,208 @@
 
       body.control-mode .device-selection-lock button {
         width: 100%;
+      }
+    }
+
+    /* Receiver phones keep the original local adjustment flow.  The same
+       selectors also cover a short phone landscape viewport without
+       changing any control-console breakpoints. */
+    @media (max-width: 759px), (max-height: 520px) and (max-width: 1000px) {
+      body:not(.control-mode) .panel {
+        max-height: min(82vh, 680px);
+        max-height: min(82dvh, 680px);
+        bottom: calc(68px + env(safe-area-inset-bottom));
+        padding-bottom: calc(88px + env(safe-area-inset-bottom));
+        scroll-padding-top: 68px;
+        scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom));
+      }
+
+      body:not(.control-mode).mobile-preset-management .preset-section,
+      body:not(.control-mode).mobile-preset-management .preset-toolbar input,
+      body:not(.control-mode).mobile-preset-management .preset-toolbar button,
+      body:not(.control-mode) .settings-section {
+        scroll-margin-top: 68px;
+        scroll-margin-bottom: calc(96px + env(safe-area-inset-bottom));
+      }
+
+      body:not(.control-mode) .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        margin: -14px -14px 12px;
+        padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
+        border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(18, 20, 24, 0.97);
+      }
+
+      body:not(.control-mode) .topbar .title {
+        min-width: 0;
+      }
+
+      body:not(.control-mode) .topbar .title h1 {
+        overflow: hidden;
+        font-size: 15px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      body:not(.control-mode) .topbar .local-lock-button {
+        flex: 0 0 auto;
+        min-width: 92px;
+        min-height: 44px;
+        padding: 0 12px;
+        white-space: nowrap;
+      }
+
+      body:not(.control-mode) .control-workspace,
+      body:not(.control-mode) .workspace-column {
+        display: block;
+        min-width: 0;
+      }
+
+      body:not(.control-mode) .settings-column {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      body:not(.control-mode) .settings-column > .settings-section {
+        display: block;
+        order: 1;
+        min-width: 0;
+      }
+
+      body:not(.control-mode) .settings-column > .preset-section {
+        display: none;
+        order: 2;
+        min-width: 0;
+      }
+
+      body:not(.control-mode).mobile-preset-management .settings-column > .settings-section {
+        order: 2;
+      }
+
+      body:not(.control-mode).mobile-preset-management .settings-column > .preset-section {
+        display: grid;
+        order: 1;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      body:not(.control-mode) .preset-management-back {
+        display: none;
+        min-height: 44px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.9);
+      }
+
+      body:not(.control-mode).mobile-preset-management .preset-management-back {
+        display: block;
+      }
+
+      body:not(.control-mode) .settings-section .controls {
+        gap: 10px;
+      }
+
+      body:not(.control-mode) .settings-section .row {
+        grid-template-columns: minmax(84px, auto) minmax(0, 1fr) 52px;
+        min-height: 44px;
+        gap: 10px;
+      }
+
+      body:not(.control-mode) .settings-section input[type="range"] {
+        min-height: 32px;
+        touch-action: manipulation;
+      }
+
+      body:not(.control-mode) .settings-section input[type="color"] {
+        width: 52px;
+        height: 40px;
+      }
+
+      body:not(.control-mode) .settings-section .actions {
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      body:not(.control-mode) .settings-section .actions button {
+        min-height: 44px;
+      }
+
+      body:not(.control-mode) .mobile-preset-bar {
+        position: fixed;
+        left: max(12px, env(safe-area-inset-left));
+        right: max(12px, env(safe-area-inset-right));
+        bottom: max(10px, env(safe-area-inset-bottom));
+        z-index: 80;
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        min-height: 58px;
+        padding: 8px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        background: #263329;
+        color: #fff;
+        box-shadow: 0 10px 32px rgba(0, 0, 0, 0.42);
+        touch-action: manipulation;
+      }
+
+      body:not(.control-mode) .mobile-preset-bar .swatch {
+        width: 42px;
+        height: 38px;
+      }
+
+      body:not(.control-mode) .mobile-preset-open {
+        min-height: 42px;
+        padding: 0 14px;
+        background: #f4f4f0;
+        color: #111;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      body:not(.control-mode) .mobile-preset-sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 120;
+        display: grid;
+        align-items: end;
+        background: rgba(5, 9, 6, 0.72);
+        touch-action: auto;
+      }
+
+      body:not(.control-mode) .mobile-preset-sheet.hidden,
+      body:not(.control-mode).locked .mobile-preset-sheet {
+        display: none !important;
+        pointer-events: none !important;
+      }
+
+      body:not(.control-mode).locked .panel,
+      body:not(.control-mode).locked .mobile-preset-bar {
+        visibility: hidden;
+        pointer-events: none !important;
+      }
+
+      body:not(.control-mode):not(.locked) .panel {
+        visibility: visible;
+      }
+    }
+
+    @media (max-height: 520px) and (max-width: 1000px) {
+      body:not(.control-mode) .panel {
+        max-height: min(74vh, calc(100vh - 86px), 680px);
+        max-height: min(74dvh, calc(100dvh - 86px), 680px);
+      }
+
+      body:not(.control-mode) .mobile-preset-bar {
+        left: auto;
+        width: min(430px, calc(100vw - 24px));
+        right: max(12px, env(safe-area-inset-right));
       }
     }

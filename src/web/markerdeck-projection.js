@@ -220,6 +220,10 @@
       state.locked = true;
       state.deviceForceLock = "1";
       hideAndroidEmergencyControls();
+      if (state.role !== "control") {
+        app.presets?.closeMobile?.();
+        document.body.classList.remove("mobile-preset-management");
+      }
       document.activeElement?.blur?.();
       global.chromaDesktop?.setProjectionLocked?.(true);
       document.body.classList.add("locked");

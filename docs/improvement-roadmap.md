@@ -226,15 +226,25 @@
 
 #### MD-A17 统一 UI、响应式工作台与场景布局
 
-状态：控制端场景工作台实现完成；6 个浏览器视口、场景 CRUD/分组选择/拖拽、预设管理和 PNG 导出已由主任务复核，Node 57 项测试与 Android 104 项测试、Lint、debug 构建通过。Android 真机/OEM 不属于本任务范围，未作现场声明，详见 `docs/tasks/MD-A17.md`。
+状态：控制端场景工作台实现完成；6 个浏览器视口、场景 CRUD/分组选择/拖拽、预设管理和 PNG 导出已由主任务复核，Node 57 项测试与 Android 104 项测试、Lint、debug 构建通过。场景工作台本身不在 Android 投放页现场验收范围；v1.7.0 APK 已在 Android `22127RK46C` 验证本机宿主 control WebView 的状态栏/刘海安全区与 local 投放切换，其他 OEM、系统字体放大和长时生命周期未测，详见 `docs/tasks/MD-A17.md`。
 
 - **控制端结构**：桌面/平板工作台分为左侧设备与场景选择、中间等比例场景平面图、右侧预设/参数；快速连接、新建场景和场景管理位于顶栏，左侧场景选择下方提供当前选择的批量锁定。
 - **场景数据**：场景名称、宽高/单位和接收页面归一化坐标保存在版本化浏览器 localStorage；新建、编辑、复制、删除、重命名和表单 Enter 提交不改变现有 HTTP/SSE、`deviceId`、`sessionId` 或导出协议。
 - **设备与布局**：按分组全选/部分选中、多组选择和物理设备多会话展开/收起保持选择；设备心跳刷新只更新卡片状态，不替换进行中的场景拖拽节点；卡片坐标显示在场景边界内。
 - **移动端边界**：手机只保留必要设备选择、场景摘要、批量锁定和现有底部预设面板，隐藏完整平面图编辑和重复快速预设网格；弹层遵循安全区与触控尺寸。
 - **角色边界**：local/display 页面继续使用原有本地快速调节、快捷预设、锁定/退出和同步流程，不展示场景平面图、场景选择、场景管理或远程目标详情。
+- **Android 宿主安全区**：本机作为宿主时只为 `control` WebView 内容应用状态栏/刘海顶部 inset；切换到 `local`/`display` 投放仍恢复沉浸式全屏，不改变场景网页或投放协议。
 - **静态资源与测试**：Node/Android 静态资源白名单包含 `markerdeck-scenes.js`；场景专项测试覆盖版本/存储异常、合法 sessionId 标点、复制/删除边界、local/display 隔离、表单新建/保存/Enter、取消选择以及拖拽期间设备刷新，并接入 Node 检查脚本。
-- **验收**：`npm test` 与 `npm run check` 均为 57/57，`git diff --check` 和 Android `:app:test :app:lintDebug :app:assembleDebug`（104 项测试）通过；浏览器 6 个视口与 CRUD、分组、多会话、拖拽、预设和 PNG 检查已记录，Android 真机/OEM 未测。
+- **验收**：`npm test` 与 `npm run check` 均为 57/57，`git diff --check` 和 Android `:app:test :app:lintDebug :app:assembleDebug`（104 项测试）通过；浏览器 6 个视口与 CRUD、分组、多会话、拖拽、预设和 PNG 检查已记录。v1.7.0 APK 在 Android `22127RK46C` 验证本机宿主 control 页竖屏安全区、横屏无溢出以及切换 local 后沉浸式投放；其他 OEM、系统字体放大和长时生命周期未测。
+
+#### MD-A18 手机被控端快速调节
+
+状态：手机 local/display 快速调节已完成（Android `22127RK46C` 已测，其他 OEM 未测）；既有投放协议保持不变，详见 `docs/tasks/MD-A18.md`。
+
+- **首屏参数**：手机被控端解锁面板先展示背景颜色、总体亮度、十字颜色和大小等常用参数，保存/删除预设与导出留在管理态或后部。
+- **预设入口**：复用已有移动预设栏、sheet 和 `applyPreset`；local/display 的管理入口显示既有预设列表并可返回参数，不打开 control 专用 overlay。
+- **锁定边界**：锁定或远程锁定时关闭 sheet、清理管理态与焦点，隐藏面板及快捷入口；解锁不自动恢复旧 sheet，ACK、同步和 interaction guard 语义不变。
+- **验收**：纳入 `390×844`、`360×800` 和 `844×390` 视口；`npm run check` 通过（57/57），`git diff --check` 通过，Android `test`、`lintDebug`、`assembleDebug` 通过（104 项 JVM 基线测试）；Android `22127RK46C` 已完成键盘、横屏、预设和锁定现场验收，其他 OEM、系统字体放大与长时生命周期未测。
 
 ### 5. 关键门禁与共同验收
 

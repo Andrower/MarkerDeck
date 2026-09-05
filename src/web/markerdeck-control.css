@@ -7,6 +7,10 @@
       background: rgba(255, 255, 255, 0.08);
     }
 
+    .preset-management-back {
+      display: none;
+    }
+
     /* Scene editing is a control-console surface.  Local and display roles
        keep the original quick-adjustment/preset flow without empty scene
        columns, scene pickers or remote-target details in the panel. */

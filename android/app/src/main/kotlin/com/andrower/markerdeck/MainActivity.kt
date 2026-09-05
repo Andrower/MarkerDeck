@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var settingsContent: View
     private lateinit var settingsContentBasePadding: SettingsContentPadding
     private lateinit var displayScreen: View
+    private lateinit var displayScreenBasePadding: SettingsContentPadding
     private lateinit var serviceAddressInput: EditText
     private lateinit var scanQrButton: Button
     private lateinit var qrScanStatusText: TextView
@@ -275,8 +276,14 @@ class MainActivity : ComponentActivity() {
             end = settingsContent.paddingEnd,
             bottom = settingsContent.paddingBottom
         )
-        configureSettingsWindowInsets()
         displayScreen = findViewById(R.id.displayScreen)
+        displayScreenBasePadding = SettingsContentPadding(
+            start = displayScreen.paddingStart,
+            top = displayScreen.paddingTop,
+            end = displayScreen.paddingEnd,
+            bottom = displayScreen.paddingBottom
+        )
+        configureSettingsWindowInsets()
         serviceAddressInput = findViewById(R.id.serviceAddressInput)
         scanQrButton = findViewById(R.id.scanQrButton)
         qrScanStatusText = findViewById(R.id.qrScanStatus)
@@ -340,23 +347,7 @@ class MainActivity : ComponentActivity() {
     private fun configureSettingsWindowInsets() {
         val root = findViewById<View>(R.id.root)
         root.setOnApplyWindowInsetsListener { _, insets ->
-            val statusBarsTopInset = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                maxOf(
-                    insets.getInsets(WindowInsets.Type.statusBars()).top,
-                    insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
-                )
-            } else {
-                insets.systemWindowInsetTop
-            }
-            val displayCutoutTopInset = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    insets.getInsets(WindowInsets.Type.displayCutout()).top
-                } else {
-                    insets.displayCutout?.safeInsetTop ?: 0
-                }
-            } else {
-                0
-            }
+            val (statusBarsTopInset, displayCutoutTopInset) = topWindowInsets(insets)
             val padding = settingsContentPaddingForTopInset(
                 base = settingsContentBasePadding,
                 statusBarsTopInset = statusBarsTopInset,
@@ -370,7 +361,48 @@ class MainActivity : ComponentActivity() {
             )
             insets
         }
+        displayScreen.setOnApplyWindowInsetsListener { _, insets ->
+            val (statusBarsTopInset, displayCutoutTopInset) = topWindowInsets(insets)
+            val padding = if (activeWebMode == AndroidWebMode.HOST_CONTROL) {
+                settingsContentPaddingForTopInset(
+                    base = displayScreenBasePadding,
+                    statusBarsTopInset = statusBarsTopInset,
+                    displayCutoutTopInset = displayCutoutTopInset
+                )
+            } else {
+                displayScreenBasePadding
+            }
+            displayScreen.setPaddingRelative(
+                padding.start,
+                padding.top,
+                padding.end,
+                padding.bottom
+            )
+            insets
+        }
         root.requestApplyInsets()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun topWindowInsets(insets: WindowInsets): Pair<Int, Int> {
+        val statusBarsTopInset = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            maxOf(
+                insets.getInsets(WindowInsets.Type.statusBars()).top,
+                insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
+            )
+        } else {
+            insets.systemWindowInsetTop
+        }
+        val displayCutoutTopInset = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                insets.getInsets(WindowInsets.Type.displayCutout()).top
+            } else {
+                insets.displayCutout?.safeInsetTop ?: 0
+            }
+        } else {
+            0
+        }
+        return statusBarsTopInset to displayCutoutTopInset
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -1115,6 +1147,7 @@ class MainActivity : ComponentActivity() {
         connectButton.isEnabled = true
         setEmbeddedModeButtonsEnabled(true)
         applyDisplayWindowState()
+        displayScreen.requestApplyInsets()
         loadDisplayPage(normalizedSettings)
         registerScreenStateReceiver()
         return true
@@ -1212,6 +1245,7 @@ class MainActivity : ComponentActivity() {
         updateDiscoveryLifecycle()
         clearDisplayWindowState()
         applyDisplayWindowState()
+        displayScreen.requestApplyInsets()
         loadDisplayPage()
         if (activeWebMode.isProjectionSurface) registerScreenStateReceiver()
     }
@@ -1481,6 +1515,7 @@ class MainActivity : ComponentActivity() {
         }
         displayScreen.visibility = View.GONE
         settingsScreen.visibility = View.VISIBLE
+        displayScreen.requestApplyInsets()
         connectButton.isEnabled = true
         scanQrButton.isEnabled = !qrScanInFlight
         setEmbeddedModeButtonsEnabled(true)
@@ -1524,7 +1559,11 @@ class MainActivity : ComponentActivity() {
 
     private fun applyDisplayWindowState() {
         // This gate keeps the settings surface out of the keyguard window path.
-        if (!shouldApplyDisplayWindowState(displayActive && activeWebMode.isProjectionSurface)) return
+        if (!shouldApplyDisplayWindowState(displayActive && activeWebMode.isProjectionSurface)) {
+            exitImmersiveMode(window)
+            displayWindowStateApplied = false
+            return
+        }
         updateProjectionWindowBrightness(projectionActive = true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -1621,6 +1660,7 @@ class MainActivity : ComponentActivity() {
         displayScreen.visibility = View.VISIBLE
         displayScreen.bringToFront()
         applyDisplayWindowState()
+        displayScreen.requestApplyInsets()
         resumeWebViewIfNeeded()
         displayDiagnosticState = recoveryState
         updateCapabilityDiagnostic()
@@ -1802,6 +1842,7 @@ class MainActivity : ComponentActivity() {
 
     private fun enterImmersiveMode(window: Window) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
             window.insetsController?.let { controller ->
                 controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
                 controller.systemBarsBehavior =
@@ -1822,6 +1863,7 @@ class MainActivity : ComponentActivity() {
 
     private fun exitImmersiveMode(window: Window) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(true)
             window.insetsController?.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
         } else {
             @Suppress("DEPRECATION")
@@ -1840,6 +1882,7 @@ class MainActivity : ComponentActivity() {
         super.onConfigurationChanged(newConfig)
         if (displayActive) {
             applyDisplayWindowState()
+            displayScreen.requestApplyInsets()
             updateCapabilityDiagnostic()
         }
     }
