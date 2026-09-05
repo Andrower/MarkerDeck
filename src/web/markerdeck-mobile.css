@@ -778,6 +778,16 @@
         max-height: min(82dvh, 680px);
         bottom: calc(68px + env(safe-area-inset-bottom));
         padding-bottom: calc(88px + env(safe-area-inset-bottom));
+        scroll-padding-top: 68px;
+        scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom));
+      }
+
+      body:not(.control-mode).mobile-preset-management .preset-section,
+      body:not(.control-mode).mobile-preset-management .preset-toolbar input,
+      body:not(.control-mode).mobile-preset-management .preset-toolbar button,
+      body:not(.control-mode) .settings-section {
+        scroll-margin-top: 68px;
+        scroll-margin-bottom: calc(96px + env(safe-area-inset-bottom));
       }
 
       body:not(.control-mode) .topbar {

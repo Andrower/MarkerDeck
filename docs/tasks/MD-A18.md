@@ -2,7 +2,7 @@
 
 ## 状态
 
-手机 local/display 被控端快速调节优化已完成并冻结代码。显式解锁后的参数面板先展示常用颜色、亮度和十字参数，同时保留既有快捷预设、预设管理、锁定/退出和同步流程。真实 Android 设备/OEM 现场验证未执行。
+手机 local/display 被控端快速调节优化已完成并冻结代码。显式解锁后的参数面板先展示常用颜色、亮度和十字参数，同时保留既有快捷预设、预设管理、锁定/退出和同步流程。已在一台 Android 设备 `22127RK46C` 上完成现场验证，其他 Android/OEM 组合仍未覆盖。
 
 ## 目标
 
@@ -43,7 +43,7 @@
 - 快捷预设入口打开既有移动 sheet，显示“当前设备”，应用预设仍走 `applyPreset`；管理预设显示保存/删除列表并可明确返回参数。
 - local/display 管理入口不打开 control 预设 overlay；场景/设备/远程详情仍隐藏。control 桌面、平板、手机布局和预设行为无回归。
 - 锁定或远程锁定时面板、移动预设栏和 sheet 均隐藏且不可点击，已开 sheet 关闭并失去焦点；解锁只恢复参数面板，不自动弹出旧 sheet。
-- `npm run check`、相关 Node 专项测试和 `git diff --check` 通过；真实 Android/OEM、软键盘和不同系统字体仍明确列为未测。
+- `npm run check`、相关 Node 专项测试和 `git diff --check` 通过；其他 Android/OEM、不同系统字体和长时生命周期仍明确列为未测。
 
 ## 自动化验证
 
@@ -52,7 +52,7 @@
 
 ## 未测现场项
 
-- Android 真机安全区、状态栏、软键盘、系统字体放大和 OEM WebView。
+- 其他 Android 真机/OEM WebView、安全区与状态栏组合、系统字体放大和长时前后台生命周期。
 - 不同浏览器的横屏地址栏动态高度及系统返回手势。
 
 ## 实现与当前验证
@@ -61,4 +61,6 @@
 - `844×390` 横屏浏览器视口已确认参数区可滚动，移动预设栏右对齐且不覆盖参数；预设 sheet 卡片、滚动与关闭入口可用。
 - local/display 的管理入口复用既有预设列表，提供“返回参数”；保存预设、返回参数、应用蓝底并通过本地/服务端同步的路径已验证。
 - 远程锁定打开 sheet 时，面板、移动预设栏和 sheet 均隐藏并清理管理态；解锁只恢复面板和快捷栏，不自动恢复旧 sheet。主任务浏览器回归确认 control `1440`、`820` 与 `390` 视口地图/移动布局无横溢出，local `360` 视口预设应用、亮度和锁定入口正常，display 管理态返回、远程锁定清理焦点与解锁恢复参数正常。
-- `npm run check` 通过（57/57），`git diff --check` 通过；Android `test`、`lintDebug`、`assembleDebug` 通过（104 项 JVM 基线测试）。软键盘、安全区、系统字体放大、不同浏览器地址栏及真机/OEM 仍未测。
+- 管理态软键盘首次滚动已用 sticky header 间距修复；非 control 通用 panel/参数滚动也补齐 header 间距，避免“返回参数”后颜色控件被遮挡。
+- Android `22127RK46C`（Android 16 WebView，Chrome `149.0.7827.163`，设备 `1440×3200`、DPR `3.5`，CSS `411×914`/`914×411`）已现场验证：local 键盘输入/保存、返回参数、预设应用与锁定可用；横屏参数与底栏无横溢出。display 通过局域网连接、预设和远程锁定/解锁，锁定 ACK `acknowledged=1 confirmed=1 failed=0 pending=0`。
+- `npm run check` 通过（57/57），`git diff --check` 通过；Android `test`、`lintDebug`、`assembleDebug` 通过（104 项 JVM 基线测试）。其他 OEM、系统字体放大、长时生命周期和不同浏览器地址栏仍未测。

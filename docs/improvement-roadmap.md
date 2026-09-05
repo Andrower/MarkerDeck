@@ -238,12 +238,12 @@
 
 #### MD-A18 手机被控端快速调节
 
-状态：手机 local/display 快速调节已完成（真机/OEM 未测）；既有投放协议保持不变，详见 `docs/tasks/MD-A18.md`。
+状态：手机 local/display 快速调节已完成（Android `22127RK46C` 已测，其他 OEM 未测）；既有投放协议保持不变，详见 `docs/tasks/MD-A18.md`。
 
 - **首屏参数**：手机被控端解锁面板先展示背景颜色、总体亮度、十字颜色和大小等常用参数，保存/删除预设与导出留在管理态或后部。
 - **预设入口**：复用已有移动预设栏、sheet 和 `applyPreset`；local/display 的管理入口显示既有预设列表并可返回参数，不打开 control 专用 overlay。
 - **锁定边界**：锁定或远程锁定时关闭 sheet、清理管理态与焦点，隐藏面板及快捷入口；解锁不自动恢复旧 sheet，ACK、同步和 interaction guard 语义不变。
-- **验收**：纳入 `390×844`、`360×800` 和 `844×390` 视口；`npm run check` 通过（57/57），`git diff --check` 通过，Android `test`、`lintDebug`、`assembleDebug` 通过（104 项 JVM 基线测试），真机/OEM 与软键盘保持未测。
+- **验收**：纳入 `390×844`、`360×800` 和 `844×390` 视口；`npm run check` 通过（57/57），`git diff --check` 通过，Android `test`、`lintDebug`、`assembleDebug` 通过（104 项 JVM 基线测试）；Android `22127RK46C` 已完成键盘、横屏、预设和锁定现场验收，其他 OEM、系统字体放大与长时生命周期未测。
 
 ### 5. 关键门禁与共同验收
 
