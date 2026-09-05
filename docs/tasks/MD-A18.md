@@ -63,4 +63,5 @@
 - 远程锁定打开 sheet 时，面板、移动预设栏和 sheet 均隐藏并清理管理态；解锁只恢复面板和快捷栏，不自动恢复旧 sheet。主任务浏览器回归确认 control `1440`、`820` 与 `390` 视口地图/移动布局无横溢出，local `360` 视口预设应用、亮度和锁定入口正常，display 管理态返回、远程锁定清理焦点与解锁恢复参数正常。
 - 管理态软键盘首次滚动已用 sticky header 间距修复；非 control 通用 panel/参数滚动也补齐 header 间距，避免“返回参数”后颜色控件被遮挡。
 - Android `22127RK46C`（Android 16 WebView，Chrome `149.0.7827.163`，设备 `1440×3200`、DPR `3.5`，CSS `411×914`/`914×411`）已现场验证：local 键盘输入/保存、返回参数、预设应用与锁定可用；横屏参数与底栏无横溢出。display 通过局域网连接、预设和远程锁定/解锁，锁定 ACK `acknowledged=1 confirmed=1 failed=0 pending=0`。
+- v1.7.0 发布收尾另在同一设备验证 Android 本机宿主 `control` WebView 的状态栏/刘海安全区与横屏布局，并确认切换 `local` 后恢复沉浸式投放；这是宿主壳安全区修复，未改变本任务的 receiver 网页协议与锁定语义，详细记录见 `docs/tasks/MD-A17.md`。
 - `npm run check` 通过（57/57），`git diff --check` 通过；Android `test`、`lintDebug`、`assembleDebug` 通过（104 项 JVM 基线测试）。其他 OEM、系统字体放大、长时生命周期和不同浏览器地址栏仍未测。

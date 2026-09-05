@@ -1,6 +1,6 @@
 {
   "name": "markerdeck-electron-client",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "main": "main.js",
   "description": "Desktop locked client shell for MarkerDeck",
