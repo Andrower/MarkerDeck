@@ -87,8 +87,8 @@ android/app/build/outputs/apk/debug/app-debug.apk
 
 本地开发继续使用 debug APK。GitHub Release 使用固定 release keystore 构建
 `android/app/build/outputs/apk/release/app-release.apk`；keystore 与密码仅从 GitHub
-Actions Secrets 注入，仓库不保存 `.jks`、`.keystore` 或密码。首个正式签名版本无法
-覆盖 v1.7.0 及更早的 debug 签名安装，需卸载一次；之后必须持续使用同一证书。
+Actions Secrets 注入，仓库不保存 `.jks`、`.keystore` 或密码。v1.7.1 无法覆盖
+v1.7.0 及更早的 debug 签名安装，需卸载一次；之后必须持续使用同一证书。
 
 纯 Kotlin 单元测试验证服务地址解析、IPv6、投放 URL 编码、二维码宿主地址归一化、权限/取消状态、发现响应校验和发现状态归并，不启动 Android 网络请求、扫码相机或 WebView。根目录的 `npm run check` 同时执行项目结构、JavaScript/HTML 语法和服务端 HTTP/UDP 集成检查。
 
