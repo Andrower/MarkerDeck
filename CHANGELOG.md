@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 实现 MD-A20 Android 正式发布签名：GitHub Release 改用固定 release keystore 构建并验证 APK、版本和证书 SHA-256，密钥只通过 Actions Secrets 注入且构建后删除；v1.7.0 及更早 debug 签名安装需卸载一次，后续固定签名版本可覆盖升级。
+
 ## 1.7.0 - 2026-09-05
 
 - 完成 MD-A18 手机被控端快速调节：local/display 手机解锁面板优先展示颜色、亮度和十字参数，复用已有移动预设栏与预设管理；锁定时清理并隐藏移动入口，control 布局和同步协议保持不变。Android `22127RK46C` 已验证，其他 OEM、系统字体放大和长时生命周期未测。
