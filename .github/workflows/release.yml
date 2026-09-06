@@ -208,9 +208,11 @@ jobs:
         shell: bash
         run: |
           apk_path="android/app/build/outputs/apk/release/app-release.apk"
-          apksigner verify --verbose --print-certs "$apk_path"
+          apksigner_path="$ANDROID_HOME/build-tools/36.1.0/apksigner"
+          aapt_path="$ANDROID_HOME/build-tools/36.1.0/aapt"
+          "$apksigner_path" verify --verbose --print-certs "$apk_path"
 
-          cert_sha256="$({ apksigner verify --print-certs "$apk_path"; } \
+          cert_sha256="$({ "$apksigner_path" verify --print-certs "$apk_path"; } \
             | awk -F': ' '/Signer #1 certificate SHA-256 digest/ { print $2; exit }' \
             | tr -d ':[:space:]' \
             | tr '[:lower:]' '[:upper:]')"
@@ -231,7 +233,7 @@ jobs:
             exit 1
           fi
 
-          package_line="$(aapt dump badging "$apk_path" | head -n 1)"
+          package_line="$("$aapt_path" dump badging "$apk_path" | head -n 1)"
           if [[ "$package_line" != *"versionName='$RELEASE_VERSION'"* ]]; then
             echo "Android versionName does not match release version $RELEASE_VERSION" >&2
             exit 1
