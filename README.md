@@ -16,9 +16,9 @@
 | [Windows 桌面客户端 ZIP](https://github.com/Andrower/MarkerDeck/releases/latest) | `MarkerDeck.Client.<版本号>.zip` | Electron 全屏控制端；必须完整解压到文件夹后运行 `MarkerDeck.exe`，不要只移动 EXE。 |
 | [Windows 浏览器服务端 ZIP](https://github.com/Andrower/MarkerDeck/releases/latest) | `markerdeck-windows-x64-v<版本号>.zip` | 解压后运行 `start-markerdeck-server.bat`，用浏览器打开控制端。 |
 | [macOS ARM64 ZIP](https://github.com/Andrower/MarkerDeck/releases/latest) | `markerdeck-macos-arm64-v<版本号>.zip` | 适用于 Apple Silicon；解压后运行 `start-markerdeck-server.command`。 |
-| [Android APK](https://github.com/Andrower/MarkerDeck/releases/latest) | `markerdeck-android-debug-v<版本号>.apk` | 当前为 debug 签名 APK，适合测试和现场试用。 |
+| [Android APK](https://github.com/Andrower/MarkerDeck/releases/latest) | `markerdeck-android-v<版本号>.apk` | 新版使用固定 MarkerDeck release 证书；v1.7.0 及更早版本仍为 debug 签名。 |
 
-Windows 桌面客户端 ZIP 内含 Electron、Node.js 和 FFmpeg 运行时，完整解压后才能正常启动。Android 当前 APK 使用 debug 签名，不代表正式商店发布包。历史版本见 [GitHub Releases](https://github.com/Andrower/MarkerDeck/releases)。
+Windows 桌面客户端 ZIP 内含 Electron、Node.js 和 FFmpeg 运行时，完整解压后才能正常启动。Android 从下一版开始使用固定 release 证书；它仍是 GitHub 直接分发包，不代表应用商店发布。历史版本见 [GitHub Releases](https://github.com/Andrower/MarkerDeck/releases)。
 
 ## 核心场景
 
@@ -46,7 +46,7 @@ MarkerDeck 适合需要让多台手机、平板或电脑同步显示纯色背景
 1. 安装 APK，打开后在模式页选择 **本机作为宿主**；内置服务以 Android 前台服务运行，设置页会显示本机局域网地址。
 2. 在本机宿主控制页的“快速连接”区域查看地址和二维码；让控制端和被控端加入同一 Wi-Fi 或手机热点，在启动页打开该地址，或扫描二维码。启动页的按钮名称为“进入控制端”和“进入被控端”。
 3. 需要让这台 Android 只显示画面时，返回模式页选择 **本地投放**；需要连接其他电脑或手机宿主时，选择 **连接局域网宿主**，使用自动发现、扫码或手动地址。
-4. 宿主服务可从 Android 设置页或常驻通知停止。当前 Release APK 为 debug 签名测试包，跨版本安装前请按发布说明确认签名与数据保留条件。
+4. 宿主服务可从 Android 设置页或常驻通知停止。v1.7.0 及更早的 debug 签名 APK 无法直接覆盖升级到首个正式签名版本；完成一次卸载重装后，后续固定签名版本可以直接升级。
 
 场景文档仅保存在当前浏览器的版本化 `localStorage` 中，不会随宿主服务或设备自动同步。Android 本机作为宿主时，控制页仍加载共享网页资源；投放协议、设备身份、锁定 ACK、状态同步和导出格式保持不变。
 Android 本机作为宿主的控制页会为状态栏和刘海安全区预留顶部空间；切换到本地或远程投放时恢复沉浸式全屏。

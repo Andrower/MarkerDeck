@@ -246,6 +246,15 @@
 - **锁定边界**：锁定或远程锁定时关闭 sheet、清理管理态与焦点，隐藏面板及快捷入口；解锁不自动恢复旧 sheet，ACK、同步和 interaction guard 语义不变。
 - **验收**：纳入 `390×844`、`360×800` 和 `844×390` 视口；`npm run check` 通过（57/57），`git diff --check` 通过，Android `test`、`lintDebug`、`assembleDebug` 通过（104 项 JVM 基线测试）；Android `22127RK46C` 已完成键盘、横屏、预设和锁定现场验收，其他 OEM、系统字体放大与长时生命周期未测。
 
+#### MD-A20 Android 正式发布签名
+
+状态：Gradle release signing、GitHub Secrets 注入、APK 签名/版本验证与固定证书指纹复跑均已通过；当前真机安装的是不同 debug 证书，本次未清除数据，待首次正式重装和后续递增 `versionCode` 覆盖升级验收。
+
+- **发布身份**：GitHub Release 使用长期固定的 MarkerDeck release keystore；debug 构建继续使用开发证书。
+- **CI 边界**：私钥与密码不进入仓库，runner 临时恢复后删除；tag 发布必须匹配仓库固定的公开证书 SHA-256。
+- **迁移**：v1.7.0 及更早的 debug 签名无法升级到首个正式签名版本，需卸载一次；后续固定签名版本可覆盖升级。
+- **依赖**：四个 GitHub Actions Secrets、固定证书指纹、发布构建和真机递增 `versionCode` 验收，详见 `docs/tasks/MD-A20.md`。
+
 ### 5. 关键门禁与共同验收
 
 - MD-A02 普通投放端 MVP 完成并通过兼容性验收后，继续以普通 Activity 生命周期作为唯一恢复路径，不在文档、界面或 Release 说明中暗示系统级锁定能力。
