@@ -248,7 +248,7 @@
 
 #### MD-A20 Android 正式发布签名
 
-状态：Gradle release signing 与 GitHub Release Secrets 注入、APK 签名/版本/证书指纹验证正在实现，待 CI bootstrap、固定指纹复跑和真机覆盖升级验收。
+状态：Gradle release signing、GitHub Secrets 注入、APK 签名/版本验证与固定证书指纹复跑均已通过；当前真机安装的是不同 debug 证书，本次未清除数据，待首次正式重装和后续递增 `versionCode` 覆盖升级验收。
 
 - **发布身份**：GitHub Release 使用长期固定的 MarkerDeck release keystore；debug 构建继续使用开发证书。
 - **CI 边界**：私钥与密码不进入仓库，runner 临时恢复后删除；tag 发布必须匹配仓库固定的公开证书 SHA-256。

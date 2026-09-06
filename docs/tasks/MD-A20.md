@@ -34,6 +34,8 @@ v1.7.0 及更早发布物使用无法继续复用的 debug 私钥，因此首个
 
 - 本地 `testDebugUnitTest`、`lintDebug` 与 `assembleDebug` 已通过，确认开发流程不依赖 release Secrets。
 - 本地无签名环境执行 `assembleRelease` 已按预期失败并显示四个必需变量，未生成可发布产物。
-- GitHub Actions 首次手工 bootstrap 已成功恢复 keystore 并构建正式 APK；验证步骤发现 runner 未将 `apksigner` 加入 PATH，现改用固定 Android SDK build-tools 路径后复跑。
-- 固定 `ANDROID_RELEASE_CERT_SHA256` 后重复手工构建。
+- GitHub Actions 首次手工 bootstrap 已成功恢复 keystore 并构建正式 APK；验证步骤发现 runner 未将 `apksigner` 加入 PATH，改用固定 Android SDK build-tools 路径后复跑通过。
+- 正式证书 SHA-256 `850246b6b84be8e4164acfeb14bfb4591d7469e6d20c33ebd074c6310b50d937` 已固定为仓库变量；第二次手工构建通过签名、版本与固定指纹验证，未创建 Release。
+- 下载的正式签名 APK 为 `com.andrower.markerdeck`、`versionName=1.7.0`、`versionCode=5`，使用 RSA 4096 位证书和 APK Signature Scheme v2。
+- Android `22127RK46C` 当前安装包为 `Android Debug` 证书，SHA-256 `48753d985f2280afdda74bec1e17bdc9b4c0f1b3ba8f8d0323d7ae73e3d340a1`，与新正式证书不同；本次只读核验，没有卸载或清除数据。
 - Android 真机完成首次正式安装及同证书递增 versionCode 覆盖升级测试。
