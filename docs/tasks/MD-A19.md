@@ -28,7 +28,5 @@
 - SVG 源稿已渲染检查，四角、中心方点、圆角与留白符合选定方案。
 - Android `lintDebug`、`assembleDebug` 已通过。
 - `git diff --check` 已通过。
-
-## 剩余现场验证
-
-- 当前没有 ADB 设备在线；需在至少一台 Android 真机 launcher 上检查圆角遮罩、深浅壁纸和主题单色图标效果。
+- Android `22127RK46C` 已安装正式 v1.7.1 APK；MIUI launcher 的圆角方形遮罩下，深墨绿背景、米白取景框和亮绿中心方点均完整显示。
+- 主题单色资源已通过 Android 资源编译；该真机未开启主题图标，因此未做 launcher 着色现场验证。
