@@ -3,6 +3,7 @@
 ## Unreleased
 
 - 实现 MD-A20 Android 正式发布签名：GitHub Release 改用固定 release keystore 构建并验证 APK、版本和证书 SHA-256，密钥只通过 Actions Secrets 注入且构建后删除；v1.7.0 及更早 debug 签名安装需卸载一次，后续固定签名版本可覆盖升级。
+- 更新 MD-A19 Android 应用图标：使用深墨绿背景、米白四角取景框和亮绿中心方点，补充 Android 主题单色图标与标准 SVG 源稿；应用页面、协议、包名和版本号不变。
 
 ## 1.7.0 - 2026-09-05
 
